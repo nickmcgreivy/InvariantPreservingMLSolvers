@@ -4,6 +4,7 @@ import jax
 from jax import vmap
 
 from flux import Flux
+from model import stencil_flux_DG_1D_advection
 
 
 def _upwind_flux_DG_1D_advection(a, core_params):
@@ -52,6 +53,7 @@ def _global_stabilization(f0, a):
     raise NotImplementedError
 
 
+
 def _flux_term_DG_1D_advection(a, core_params, global_stabilization=False, model=None, params=None):
     negonetok = (jnp.ones(core_params.order+1) * -1) ** jnp.arange(core_params.order+1)
     if core_params.flux == Flux.UPWIND:
@@ -61,6 +63,9 @@ def _flux_term_DG_1D_advection(a, core_params, global_stabilization=False, model
     else:
         raise NotImplementedError
 
+    if params is not None:
+        delta_flux = stencil_flux_DG_1D_advection(a, model, params)
+        flux_right = flux_right + delta_flux
 
     flux_left = jnp.roll(flux_right, 1, axis=0)
     return negonetok[None, :] * flux_left[:, None] - flux_right[:, None]

@@ -4,7 +4,7 @@ import jax
 from jax import vmap
 
 from flux import Flux
-
+from model import stencil_flux_FV_1D_advection
 
 def _upwind_flux_FV_1D_advection(a, core_params):
 	c = 1.0
@@ -37,6 +37,8 @@ def _global_stabilization(f0, a):
 	raise NotImplementedError
 
 
+
+
 def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model=None, params=None):
 	if core_params.flux == Flux.UPWIND:
 		flux_right = _upwind_flux_FV_1D_advection(a, core_params)
@@ -46,6 +48,11 @@ def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model
 		flux_right = _muscl_flux_FV_1D_advection(a, core_params)
 	else:
 		raise NotImplementedError
+
+	if params is not None:
+		delta_flux = stencil_flux_FV_1D_advection(a, model, params)
+		flux_right = flux_right + delta_flux
+
 
 	flux_left = jnp.roll(flux_right, 1, axis=0)
 	return flux_left - flux_right
