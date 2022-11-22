@@ -6,6 +6,7 @@ import numpy as onp
 import optax
 from flax import serialization
 from flax.training import train_state  # Useful dataclass to keep train state
+from optax import polynomial_schedule
 
 from helper import convert_FV_representation, convert_DG_representation
 from trajectory import get_inner_fn, get_trajectory_fn
@@ -95,20 +96,27 @@ def save_training_data(key, init_fn, core_params, sim_params, sim, t_inner, oute
 
 
 def init_params(key, model):
-    NX_NO_MEANING = 128  # params doesn't depend on this
-    zeros = jnp.zeros((NX_NO_MEANING, model.p))
-    return model.init(
-        key, zeros
-    )
+	NX_NO_MEANING = 128  # params doesn't depend on this
+	zeros = jnp.zeros((NX_NO_MEANING, model.p))
+	return model.init(
+		key, zeros
+	)
 
-def create_train_state(model, params, training_params, optimizer="adam"):
-    if optimizer == "adam":
-        tx = optax.adam(training_params.learning_rate)
-    elif optimizer == "sgd":
-        tx = optax.sgd(training_params.learning_rate)
-    else:
-        raise ValueError("Incorrect Optimizer")
-    return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
+def create_train_state(model, params, training_params):
+	schedule_fn = polynomial_schedule(
+		init_value=training_params.learning_rate,
+		end_value=training_params.learning_rate / 10,
+		power=1,
+		transition_steps=training_params.num_training_iterations // 2,
+		transition_begin=training_params.num_training_iterations // 4,
+	)
+	if training_params.optimizer == "adam":
+		tx = optax.chain(optax.adam(schedule_fn), optax.zero_nans())
+	elif training_params.optimizer == "sgd":
+		tx = optax.chain(optax.sgd(schedule_fn), optax.zero_nans())
+	else:
+		raise ValueError("Incorrect Optimizer")
+	return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
 
 
@@ -181,13 +189,13 @@ def get_idx_gen(key, training_params):
 
 
 
-def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn, optimizer="sgd"):
+def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn):
 	"""
 	idx_fn: lambda subkey -> idx_gen
 	batch_fn: lambda idxs -> batch
 	loss_fn: lambda params, batch -> loss
 	"""
-	state = create_train_state(model, params, training_params, optimizer=optimizer)
+	state = create_train_state(model, params, training_params)
 	grad_fn = jax.value_and_grad(loss_fn)
 
 	@jax.jit
