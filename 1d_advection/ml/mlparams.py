@@ -4,7 +4,7 @@ from dataclasses import dataclass
 class TrainingParams:
 	n_data: int
 	num_epochs: int
-	unique_id: str
+	train_id: str
 	batch_size: int
 	learning_rate: float
 	optimizer: str

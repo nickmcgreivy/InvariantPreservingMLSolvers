@@ -94,6 +94,28 @@ def save_training_data(key, init_fn, core_params, sim_params, sim, t_inner, oute
 
 
 
+def save_training_params(nx, sim_params, training_params, params, losses):
+    bytes_output = serialization.to_bytes(params)
+    with open("{}/data/params/{}_nx{}_params".format(sim_params.readwritedir, training_params.train_id, nx), "wb") as f:
+        f.write(bytes_output)
+    with open(
+        "{}/data/params/{}_nx{}_losses.npy".format(sim_params.readwritedir, training_params.train_id, nx), "wb"
+    ) as f:
+        onp.save(f, losses)
+
+
+def load_training_params(nx, sim_params, training_params, model):
+    losses = onp.load("{}/data/params/{}_nx{}_losses.npy".format(sim_params.readwritedir, training_params.train_id, nx))
+    with open(
+        "{}/data/params/{}_nx{}_params".format(sim_params.readwritedir, training_params.train_id, nx), "rb"
+    ) as f:
+        param_bytes = f.read()
+
+    params = serialization.from_bytes(
+        init_params(jax.random.PRNGKey(0), model), param_bytes
+    )
+    return losses, params
+
 
 def init_params(key, model):
 	NX_NO_MEANING = 128  # params doesn't depend on this
