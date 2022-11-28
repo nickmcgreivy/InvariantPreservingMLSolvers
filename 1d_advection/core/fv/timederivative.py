@@ -33,21 +33,36 @@ def _muscl_flux_FV_1D_advection(u, core_params):
 	du_j = minmod_3(du_j_minus, (du_j_plus + du_j_minus) / 4, du_j_plus)
 	return u + du_j
 
-def _global_stabilization(f0, a):
+def _learned_limiter_flux_FV_1D_advection(u, flux_right):
+    du_j_minus = u - np.roll(u, 1)
+    du_j_plus = np.roll(u, -1) - u
+    du_j = minmod_3(du_j_minus, flux_right - u, du_j_plus)
+    return u + du_j
+
+def _global_stabilization(f0, a, epsilon_gs=0.0):
 	diff = (jnp.roll(a, -1) - a)
 	dl2_old_dt = jnp.sum(f0 * diff)
-	return f0 - (dl2_old_dt > 0) * dl2_old_dt * diff / jnp.sum(diff**2)
+	return f0 - (dl2_old_dt > 0.) * (dl2_old_dt * (1 + epsilon_gs)) * diff / jnp.sum(diff**2)
 
 
 
 
-def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model=None, params=None):
+def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, epsilon_gs=0.0, model=None, params=None):
 	if core_params.flux == Flux.UPWIND:
 		flux_right = _upwind_flux_FV_1D_advection(a, core_params)
 	elif core_params.flux == Flux.CENTERED:
 		flux_right = _centered_flux_FV_1D_advection(a, core_params)
 	elif core_params.flux == Flux.MUSCL:
 		flux_right = _muscl_flux_FV_1D_advection(a, core_params)
+	elif core_params.flux == Flux.LEARNEDLIMITER:
+		assert params is not None
+		assert global_stabilization == False
+		flux_right = _muscl_flux_FV_1D_advection(a, core_params)
+		delta_flux = stencil_flux_FV_1D_advection(a, model, params)
+		flux_right = flux_right + delta_flux
+		flux_right = _learned_limiter_flux_FV_1D_advection(a, flux_right)
+		flux_left = jnp.roll(flux_right, 1, axis=0)
+		return flux_left - flux_right
 	else:
 		raise NotImplementedError
 
@@ -56,7 +71,7 @@ def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model
 		flux_right = flux_right + delta_flux
 
 	if global_stabilization:
-		flux_right = _global_stabilization(flux_right, a)
+		flux_right = _global_stabilization(flux_right, a, epsilon_gs=epsilon_gs)
 
 
 	flux_left = jnp.roll(flux_right, 1, axis=0)
@@ -64,7 +79,7 @@ def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model
 
 
 
-def time_derivative_FV_1D_advection(core_params, global_stabilization=False, model=None, params=None):
+def time_derivative_FV_1D_advection(core_params, **kwargs):
 	
 	c = 1.0
 
@@ -72,7 +87,7 @@ def time_derivative_FV_1D_advection(core_params, global_stabilization=False, mod
 		nx = a.shape[0]
 		dx = core_params.Lx / nx
 		C = c / dx
-		flux_term = _flux_term_FV_1D_advection(a, core_params, global_stabilization=global_stabilization, model=model, params=params)
+		flux_term = _flux_term_FV_1D_advection(a, core_params, **kwargs)
 		return C * flux_term
 
 	return dadt
