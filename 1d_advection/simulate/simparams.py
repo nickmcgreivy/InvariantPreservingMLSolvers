@@ -27,7 +27,6 @@ class SimulationParams:
 	readwritedir: str
 	cfl_safety: float
 	rk: str
-	global_stabilization: bool
 
 	def __post_init__(self):
 		self.rk_fn = FUNCTION_MAP[self.rk]

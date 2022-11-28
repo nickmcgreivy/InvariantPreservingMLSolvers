@@ -34,7 +34,9 @@ def _muscl_flux_FV_1D_advection(u, core_params):
 	return u + du_j
 
 def _global_stabilization(f0, a):
-	raise NotImplementedError
+	diff = (jnp.roll(a, -1) - a)
+	dl2_old_dt = jnp.sum(f0 * diff)
+	return f0 - (dl2_old_dt > 0) * dl2_old_dt * diff / jnp.sum(diff**2)
 
 
 
@@ -52,6 +54,9 @@ def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, model
 	if params is not None:
 		delta_flux = stencil_flux_FV_1D_advection(a, model, params)
 		flux_right = flux_right + delta_flux
+
+	if global_stabilization:
+		flux_right = _global_stabilization(flux_right, a)
 
 
 	flux_left = jnp.roll(flux_right, 1, axis=0)

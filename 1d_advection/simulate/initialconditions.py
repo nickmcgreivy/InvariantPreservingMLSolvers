@@ -9,16 +9,18 @@ PI = jnp.pi
 
 
 def get_a0(f_init, core_params, nx):
+	return get_a(f_init, 0.0, core_params, nx)
+
+def get_a(f_init, t, core_params, nx):
 	dx = core_params.Lx / nx
 	if core_params.order is None:
 		p = 1
-		res = map_f_to_DG(f_init, 0.0, p, nx, dx, generate_legendre(p))
+		res = map_f_to_DG(f_init, t, p, nx, dx, generate_legendre(p))
 		return res[:,0]
 	else:
 		p = core_params.order+1
-		res = map_f_to_DG(f_init, 0.0, p, nx, dx, generate_legendre(p))
+		res = map_f_to_DG(f_init, t, p, nx, dx, generate_legendre(p))
 		return res
-
 
 def f_init_sum_of_amplitudes(Lx, key=random.PRNGKey(0), min_num_modes=1, max_num_modes=6, min_k = 1, max_k = 4, amplitude_max=1.0):
 	key1, key2, key3, key4 = random.split(key, 4)
