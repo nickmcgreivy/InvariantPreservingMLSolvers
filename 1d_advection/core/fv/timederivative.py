@@ -34,20 +34,21 @@ def _muscl_flux_FV_1D_advection(u, core_params):
 	return u + du_j
 
 def _learned_limiter_flux_FV_1D_advection(u, flux_right):
-    du_j_minus = u - np.roll(u, 1)
-    du_j_plus = np.roll(u, -1) - u
+    du_j_minus = u - jnp.roll(u, 1)
+    du_j_plus = jnp.roll(u, -1) - u
     du_j = minmod_3(du_j_minus, flux_right - u, du_j_plus)
     return u + du_j
 
-def _global_stabilization(f0, a, epsilon_gs=0.0):
+def _global_stabilization(f0, a, epsilon_gs=0.0, G = lambda f, u: jnp.roll(u, -1) - u):
 	diff = (jnp.roll(a, -1) - a)
 	dl2_old_dt = jnp.sum(f0 * diff)
-	return f0 - (dl2_old_dt > 0.) * (dl2_old_dt * (1 + epsilon_gs)) * diff / jnp.sum(diff**2)
+	g = G(f0, a)
+	return f0 - (dl2_old_dt > 0.) * (dl2_old_dt * (1. + epsilon_gs)) * g / jnp.sum(diff * g)
 
 
 
 
-def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, epsilon_gs=0.0, model=None, params=None):
+def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, G = lambda f, u: jnp.roll(u, -1) - u, epsilon_gs=0.0, model=None, params=None):
 	if core_params.flux == Flux.UPWIND:
 		flux_right = _upwind_flux_FV_1D_advection(a, core_params)
 	elif core_params.flux == Flux.CENTERED:
@@ -71,7 +72,7 @@ def _flux_term_FV_1D_advection(a, core_params, global_stabilization=False, epsil
 		flux_right = flux_right + delta_flux
 
 	if global_stabilization:
-		flux_right = _global_stabilization(flux_right, a, epsilon_gs=epsilon_gs)
+		flux_right = _global_stabilization(flux_right, a, epsilon_gs=epsilon_gs, G = G)
 
 
 	flux_left = jnp.roll(flux_right, 1, axis=0)
