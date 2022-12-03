@@ -1,7 +1,4 @@
 import jax.numpy as jnp
-from jax.lax import scan
-import jax
-from jax import vmap
 
 from flux import Flux
 from model import stencil_flux_FV_1D_advection
