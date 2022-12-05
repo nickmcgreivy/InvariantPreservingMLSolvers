@@ -157,17 +157,16 @@ def map_f_to_FV(f, nx, dx, quad_func=_fixed_quad, n=5, t = 0.0):
 def get_rho(a, core_params):
 	return a[0]
 
-
 def get_u(a, core_params):
-	if (a[0] < 0.0).any():
-		print("Warning: density is negative")
 	return a[1] / a[0]
 
 def get_p(a, core_params):
 	E = a[3]
-	if (E < 0.0).any():
-		print("Warning: energy is negative")
 	p = (E - (1/2 * a[1]**2 / a[0]) ) * (core_params.gamma - 1)
-	if (p < 0.0).any():
-		print("Warning: pressure is negative")
 	return p
+
+def get_H(a, core_params):
+	return (a[2] + get_p(a, core_params)) / a[0]
+
+def get_sound_speed(a, core_params):
+	return jnp.sqrt(core_params.gamma * get_p(a, core_params) / get_rho(a, core_params))
