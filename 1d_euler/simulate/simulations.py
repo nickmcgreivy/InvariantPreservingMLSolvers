@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from helper import get_sound_speed, get_u
+from helper import get_c, get_u
 from timederivative import time_derivative_FV_1D_euler
 
 class ShockTubeSim():
@@ -18,7 +18,7 @@ class ShockTubeSim():
 	def get_dt_fn(self, core_params, sim_params):
 
 		def get_dt(a):
-			max_speed = jnp.max(jnp.abs(get_u(a, core_params)) + get_sound_speed(a, core_params))
+			max_speed = jnp.max(jnp.abs(get_u(a, core_params)) + get_c(a, core_params))
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
 			return sim_params.cfl_safety * dx / max_speed

@@ -4,7 +4,17 @@ from jax import vmap
 
 from flux import Flux
 from boundaryconditions import BoundaryCondition
-from helper import get_p, get_u, get_H
+from helper import get_p, get_u, get_H, get_c
+
+def minmod_3(z1, z2, z3):
+	s = (
+		0.5
+		* (jnp.sign(z1) + jnp.sign(z2))
+		* jnp.absolute(0.5 * ((jnp.sign(z1) + jnp.sign(z3))))
+	)
+	return s * jnp.minimum(jnp.absolute(z1), jnp.minimum(jnp.absolute(z2), jnp.absolute(z3)))
+
+vmap_minmod_3 = vmap(minmod_3, (0, 0, 0), 0)
 
 def f_j(a_j, core_params):
 	rho_u = a_j[1]
@@ -28,6 +38,13 @@ def lax_friedrichs_flux_ghost(a, core_params, dt, dx):
 	F_R = F[:, 1:]
 	F_L = F[:, :-1]
 	return -(F_R - F_L)
+
+def flux_laxfriedrichs(aL, aR, core_params, dt, dx):
+	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * (dx / dt) * (aR - aL)
+
+def flux_rusanov(aL, aR, core_params):
+	local_max_speed = jnp.maximum(jnp.abs(get_u(aL, core_params)) + get_c(aL, core_params), (jnp.abs(get_u(aR, core_params)) + get_c(aR, core_params)))
+	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * local_max_speed * (aR - aL)
 
 def flux_roe(aL, aR, core_params):
 	rhoL = aL[0]
@@ -62,6 +79,33 @@ def flux_roe(aL, aR, core_params):
 
 	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * (corr1 + corr2 + corr3)
 
+
+def flux_muscl_ghost(a, core_params):
+	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
+
+	da_j_minus = a[:,1:-1] - a[:, :-2]
+	da_j_plus  = a[:, 2:]  - a[:, 1:-1]
+	da_j = vmap_minmod_3(da_j_minus, (da_j_plus + da_j_minus) / 4, da_j_plus)
+	aL = (a[:, 1:-1] + da_j)[:,:-1]
+	aR = (a[:, 1:-1] - da_j)[:, 1:]
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F[:, 1:]
+	F_L = F[:, :-1]
+	return -(F_R - F_L)
+
+def flux_muscl_periodic(a, core_params):
+
+	da_j_minus = a - jnp.roll(a, 1, axis=1)
+	da_j_plus = jnp.roll(a, -1, axis=1) - a
+	da_j = vmap_minmod_3(da_j_minus, (da_j_plus + da_j_minus) / 4, da_j_plus)
+
+	aL = a + da_j
+	aR = jnp.roll(a - da_j, -1, axis=1)
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
 def flux_periodic(a, core_params, flux_fn):
 	a_j = a
 	a_j_plus_one = jnp.roll(a, -1, axis=1)
@@ -82,20 +126,26 @@ def flux_ghost(a, core_params, flux_fn):
 
 def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None):
 
-	if core_params.flux == Flux.LAXFRIEDRICHS:
-		assert dt_fn is not None
+	if core_params.flux == Flux.MUSCL:
+
 		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: lax_friedrichs_flux_ghost(a, core_params, dt_fn(a), core_params.Lx / a.shape[1])
+			flux_term = lambda a: flux_muscl_ghost(a, core_params)
 		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: lax_friedrichs_flux_periodic(a, core_params, dt_fn(a), core_params.Lx / a.shape[1])
+			flux_term = lambda a: flux_muscl_periodic(a, core_params)
 		else:
 			raise NotImplementedError
-	elif core_params.flux == Flux.ROE:
-		flux_fn = flux_roe
-	else:
-		raise NotImplementedError
 
-	if core_params.flux != Flux.LAXFRIEDRICHS:
+	else:
+		if core_params.flux == Flux.LAXFRIEDRICHS:
+			assert dt_fn is not None
+			flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
+		elif core_params.flux == Flux.ROE:
+			flux_fn = flux_roe
+		elif core_params.flux == Flux.RUSANOV:
+			flux_fn = flux_rusanov
+		else:
+			raise NotImplementedError
+
 		if core_params.bc == BoundaryCondition.GHOST:
 			flux_term = lambda a: flux_ghost(a, core_params, flux_fn)
 		elif core_params.bc == BoundaryCondition.PERIODIC:

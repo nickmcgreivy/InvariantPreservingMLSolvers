@@ -168,5 +168,11 @@ def get_p(a, core_params):
 def get_H(a, core_params):
 	return (a[2] + get_p(a, core_params)) / a[0]
 
-def get_sound_speed(a, core_params):
+def get_c(a, core_params):
 	return jnp.sqrt(core_params.gamma * get_p(a, core_params) / get_rho(a, core_params))
+
+def get_entropy(a, core_params):
+    p = get_p(a, core_params)
+    rho = a[0]
+    gamma = core_params.gamma
+    return rho * (p / rho**gamma)**(1/(1+gamma))
