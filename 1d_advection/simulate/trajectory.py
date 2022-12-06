@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 
-
 def get_inner_fn(step_fn, dt_fn, t_inner):
 
 	def cond_fun(x):

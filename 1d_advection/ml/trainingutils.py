@@ -13,6 +13,7 @@ from trajectory import get_inner_fn, get_trajectory_fn
 from initialconditions import get_initial_condition_fn, get_a0
 from model import stencil_flux_FV_1D_advection, stencil_flux_DG_1D_advection
 from lossfunctions import mse_loss_DG, mse_loss_FV
+from simulations import AdvectionFVSim, AdvectionDGSim
 
 def create_training_data(sim_params, core_params, nxs, N):
 	for nx in nxs:
@@ -33,6 +34,27 @@ def create_training_data(sim_params, core_params, nxs, N):
 			f.create_dataset("delta_dadt", (N, nx, core_params.order + 1), dtype="float64")
 			f.close()
 
+
+def create_training_data_unroll(sim_params, core_params, nxs, N, n_unroll):
+	for nx in nxs:
+		if core_params.order is None:
+			f = h5py.File(
+				"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
+				"w",
+			)
+			f.create_dataset("a0", (N, nx), dtype="float64")
+			f.create_dataset("a_unroll", (N, n_unroll, nx), dtype="float64")
+			f.close()
+		else:
+			f = h5py.File(
+				"{}/data/traindata/{}_order{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, core_params.order, nx),
+				"w",
+			)
+			f.create_dataset("a0", (N, nx, core_params.order + 1), dtype="float64")
+			f.create_dataset("a_unroll", (N, n_unroll, nx, core_params.order + 1), dtype="float64")
+			f.close()
+
+
 def write_trajectory(sim_params, core_params, nx, trajectory, delta_dadt_trajectory, n, outer_steps):
 	if core_params.order is None:
 		f = h5py.File(
@@ -48,6 +70,24 @@ def write_trajectory(sim_params, core_params, nx, trajectory, delta_dadt_traject
 	j_end = (n+1) * outer_steps
 	f["a"][j_begin:j_end] = trajectory
 	f["delta_dadt"][j_begin:j_end] = delta_dadt_trajectory
+	f.close()
+
+
+def write_trajectory_unroll(sim_params, core_params, nx, trajectory, trajectory_unroll, n, outer_steps):
+	if core_params.order is None:
+		f = h5py.File(
+			"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
+			"r+",
+		)
+	else:
+		f = h5py.File(
+			"{}/data/traindata/{}_order{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, core_params.order, nx),
+			"r+",
+		)
+	j_begin = n * outer_steps
+	j_end = (n+1) * outer_steps
+	f["a0"][j_begin:j_end] = trajectory
+	f["a_unroll"][j_begin:j_end] = trajectory_unroll
 	f.close()
 
 
@@ -92,6 +132,40 @@ def save_training_data(key, init_fn, core_params, sim_params, sim, t_inner, oute
 
 			write_trajectory(sim_params, core_params, nx, trajectory_ds, delta_dadt_trajectory, n, outer_steps)
 
+
+def save_training_data_unroll(key, init_fn, core_params, sim_params, sim, t_inner, outer_steps, n_runs, nx_exact, nxs, n_unroll, dts, **kwargs):
+	inner_fn = get_inner_fn(sim.step_fn, sim.dt_fn, t_inner)
+	rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
+	time_derivative_fn = jax.vmap(jax.jit(sim.F))
+
+	# initialize files for saving training data
+	create_training_data_unroll(sim_params, core_params, nxs, outer_steps * n_runs, n_unroll)
+
+	for n in range(n_runs):
+		print(n)
+		key, subkey = jax.random.split(key)
+		# init solution
+		f_init = init_fn(subkey)
+		a0 = get_a0(f_init, core_params, nx_exact)
+		# get exact trajectory
+		trajectory = rollout_fn(a0)
+
+		# for each a in trajectory, simulate with timestep dt(nx) for n_unroll steps
+		for j, nx in enumerate(nxs):
+			if core_params.order is None:
+				convert_fn = jax.jit(jax.vmap(lambda a: convert_FV_representation(a, nx, core_params.Lx)))
+			else:
+				convert_fn = jax.jit(jax.vmap(lambda a: convert_DG_representation(a, core_params.order + 1, nx, core_params.Lx)))
+			
+			dt = dts[j]
+			inner_fn_dt = get_inner_fn(sim.step_fn, sim.dt_fn, dt) # instead of advancing by t_inner, advance by dt = dts[i] 
+			unroll_fn = jax.vmap(get_trajectory_fn(inner_fn_dt, n_unroll, start_with_input=False))
+			trajectory_unroll = unroll_fn(trajectory)
+
+			trajectory_ds = convert_fn(trajectory)
+			trajectory_unroll_ds = jax.vmap(convert_fn)(trajectory_unroll)
+
+			write_trajectory_unroll(sim_params, core_params, nx, trajectory_ds, trajectory_unroll_ds, n, outer_steps)
 
 
 def save_training_params(nx, sim_params, training_params, params, losses):
@@ -164,6 +238,28 @@ def get_batch_fn(core_params, sim_params, training_params, nx):
 	return batch_fn
 
 
+def get_batch_fn_unroll(core_params, sim_params, training_params, nx):
+	if core_params.order is None:
+		f = h5py.File(
+			"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
+			"r",
+		)
+	else:
+		f = h5py.File(
+			"{}/data/traindata/{}_order{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, core_params.order, nx),
+			"r",
+		)
+	
+	a0 = device_put(jnp.asarray(f["a0"][:training_params.n_data]), jax.devices()[0])
+	a_unroll = device_put(jnp.asarray(f["a_unroll"][:training_params.n_data]), jax.devices()[0])
+	f.close()
+
+	def batch_fn(idxs):
+		return {"a0": a0[idxs], "a_unroll": a_unroll[idxs]}
+
+	return batch_fn
+
+
 def get_loss_fn(model, core_params):    
 	c = 1.0
 
@@ -195,6 +291,35 @@ def get_loss_fn(model, core_params):
 	return loss_fn
 
 
+def get_loss_fn_unroll(model, core_params, sim_params, n_unroll):
+
+	def unroll_fn(a0, params, dt):
+		nx = a0.shape[0]
+		dx = core_params.Lx / nx
+		if core_params.order is None:
+			sim = AdvectionFVSim(core_params, sim_params, model=model, params=params)
+		else:
+			sim = AdvectionDGSim(core_params, sim_params, model=model, params=params)
+    
+		inner_fn_dt = lambda a: sim.step_fn(a, dt) # instead of advancing by t_inner, advance by dt = dts[i]  
+		unroll_fn = get_trajectory_fn(inner_fn_dt, n_unroll, start_with_input=False)
+		trajectory_unroll = unroll_fn(a0)
+		return trajectory_unroll
+
+
+	batch_unroll_fn = jax.vmap(unroll_fn, in_axes=(0, None, None), out_axes=0)
+
+	@jax.jit
+	def loss_fn(params, batch, dt = None):
+		a_unroll = batch_unroll_fn(batch["a0"], params, dt)
+		if core_params.order is None:
+			return mse_loss_FV(a_unroll, batch["a_unroll"])
+		else:
+			return mse_loss_DG(a_unroll, batch["a_unroll"])
+		
+	return loss_fn
+
+
 def get_idx_gen(key, training_params):
 	possible_idxs = jnp.arange(training_params.n_data)
 	shuffle_idxs = jax.random.permutation(key, possible_idxs)
@@ -205,13 +330,7 @@ def get_idx_gen(key, training_params):
 		counter += training_params.batch_size
 
 
-
-
-
-
-
-
-def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn):
+def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn, **kwargs):
 	"""
 	idx_fn: lambda subkey -> idx_gen
 	batch_fn: lambda idxs -> batch
@@ -222,7 +341,7 @@ def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn):
 
 	@jax.jit
 	def train_step(state, batch):
-		loss, grads = grad_fn(state.params, batch)
+		loss, grads = grad_fn(state.params, batch, **kwargs)
 		state = state.apply_gradients(grads=grads)
 		return state, loss
 
@@ -248,7 +367,6 @@ def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn):
 		losses_all[n * n_loss_per_batch : (n+1) * n_loss_per_batch] = onp.asarray(losses)
 
 	return jnp.asarray(losses_all), state.params
-
 
 
 def compute_losses_no_model(key, idx_fn, batch_fn, loss_fn):
