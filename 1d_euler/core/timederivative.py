@@ -47,6 +47,12 @@ def flux_rusanov(aL, aR, core_params):
 	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * local_max_speed * (aR - aL)
 
 def flux_roe(aL, aR, core_params):
+
+	def entropy_fix(eig, eigL, eigR):
+		delta = jnp.maximum(0, jnp.maximum(eig-eigL, eigR - eig))
+		abs_eig = jnp.abs(eig)
+		return (abs_eig >= delta) * abs_eig + (abs_eig < delta) * delta #jnp.nan_to_num(0.5 * (delta + eig**2 / delta))
+
 	rhoL = aL[0]
 	rhoR = aR[0]
 
@@ -70,12 +76,18 @@ def flux_roe(aL, aR, core_params):
 	r3 = jnp.asarray([ones, uRoe + cRoe, HRoe + uRoe * cRoe])
 
 	eig1 = uRoe - cRoe
+	eig1L = get_u(aL, core_params) - get_c(aL, core_params)
+	eig1R = get_u(aR, core_params) - get_c(aR, core_params)
 	eig2 = uRoe
+	eig2L = get_u(aL, core_params)
+	eig2R = get_u(aR, core_params)
 	eig3 = uRoe + cRoe
+	eig3L = get_u(aL, core_params) + get_c(aL, core_params)
+	eig3R = get_u(aR, core_params) + get_c(aR, core_params)
 
-	corr1 = jnp.abs(eig1) * V1 * r1
-	corr2 = jnp.abs(eig2) * V2 * r2
-	corr3 = jnp.abs(eig3) * V3 * r3
+	corr1 = entropy_fix(eig1, eig1L, eig1R) * V1 * r1
+	corr2 = entropy_fix(eig2, eig2L, eig2R) * V2 * r2
+	corr3 = entropy_fix(eig3, eig3L, eig3R) * V3 * r3
 
 	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * (corr1 + corr2 + corr3)
 
@@ -93,6 +105,71 @@ def flux_muscl_ghost(a, core_params):
 	F_L = F[:, :-1]
 	return -(F_R - F_L)
 
+def flux_musclprimitive_ghost(a, core_params):
+	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
+
+	rho = a[0]
+	u = get_u(a, core_params)
+	p = get_p(a, core_params)
+	V = jnp.asarray([rho, u, p])
+
+	dV_j_minus = V[:,1:-1] - V[:, :-2]
+	dV_j_plus  = V[:, 2:]  - V[:, 1:-1]
+	dV_j = vmap_minmod_3(dV_j_minus, (dV_j_plus + dV_j_minus) / 4, dV_j_plus)
+	VL = (V[:, 1:-1] + dV_j)[:,:-1]
+	VR = (V[:, 1:-1] - dV_j)[:, 1:]
+
+	EL = VL[2]/(core_params.gamma - 1) + 0.5 * VL[0] * VL[1]**2
+	ER = VR[2]/(core_params.gamma - 1) + 0.5 * VR[0] * VR[1]**2
+	aL = jnp.asarray([VL[0], VL[0] * VL[1], EL])
+	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
+
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F[:, 1:]
+	F_L = F[:, :-1]
+	return -(F_R - F_L)
+
+def flux_musclcharacteristic_ghost(a, core_params):
+	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
+
+
+	dQ_minus = a[:,1:-1] - a[:, :-2]
+	dQ_plus = a[:, 2:] - a[:, 1:-1]
+
+	a = a[:,1:-1]
+
+	h = get_H(a, core_params)
+	u = get_u(a, core_params)
+	c = get_c(a, core_params)
+	b = core_params.gamma - 1
+
+	alpha_1_minus = (b / c**2) * ( (h-u**2) * dQ_minus[0] + u * dQ_minus[1] - dQ_minus[2] )
+	alpha_2_minus = 1 / (2 * c) * (dQ_minus[1] +(c - u) * dQ_minus[0] - c * alpha_1_minus )
+	alpha_0_minus = dQ_minus[0] - alpha_1_minus - alpha_2_minus
+	dD_minus = jnp.asarray([alpha_0_minus, alpha_1_minus, alpha_2_minus]) # D stands for Delta = L(Q_i) (Q_{...}-Q_{...})
+	
+	alpha_1_plus = (b / c**2) * ( (h-u**2) * dQ_plus[0] + u * dQ_plus[1] - dQ_plus[2] )
+	alpha_2_plus = 1 / (2 * c) * (dQ_plus[1] + (c - u) * dQ_plus[0] - c * alpha_1_plus )
+	alpha_0_plus = dQ_plus[0] - alpha_1_plus - alpha_2_plus
+	dD_plus = jnp.asarray([alpha_0_plus, alpha_1_plus, alpha_2_plus])
+
+	dD = vmap_minmod_3(dD_minus, (dD_plus + dD_minus) / 4, dD_plus)
+
+	ones = jnp.ones(a.shape[1])
+	r1 = jnp.asarray([ones, u - c, h - u * c])
+	r2 = jnp.asarray([ones, u,     u**2 / 2 ])
+	r3 = jnp.asarray([ones, u + c, h + u * c])
+	R = jnp.asarray([r1, r2, r3])
+
+	da_j = jnp.einsum('ijk,ik->jk', R, dD)
+
+	aL = (a + da_j)[:,:-1]
+	aR = (a - da_j)[:, 1:]
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F[:, 1:]
+	F_L = F[:, :-1]
+	return -(F_R - F_L)
+
 def flux_muscl_periodic(a, core_params):
 
 	da_j_minus = a - jnp.roll(a, 1, axis=1)
@@ -105,6 +182,67 @@ def flux_muscl_periodic(a, core_params):
 	F_R = F
 	F_L = jnp.roll(F_R, 1, axis=1)
 	return -(F_R - F_L)
+
+def flux_musclprimitive_periodic(a, core_params):
+	rho = a[0]
+	u = get_u(a, core_params)
+	p = get_p(a, core_params)
+	V = jnp.asarray([rho, u, p])
+
+	dV_j_minus = V - jnp.roll(V, 1, axis=1)
+	dV_j_plus = jnp.roll(V, -1, axis=1) - V
+	dV_j = vmap_minmod_3(dV_j_minus, (dV_j_plus + dV_j_minus) / 4, dV_j_plus)
+
+	VL = V + dV_j
+	VR = jnp.roll(V - dV_j, -1, axis=1)
+
+	EL = VL[2]/(core_params.gamma - 1) + 0.5 * VL[0] * VL[1]**2
+	ER = VR[2]/(core_params.gamma - 1) + 0.5 * VR[0] * VR[1]**2
+	aL = jnp.asarray([VL[0], VL[0] * VL[1], EL])
+	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
+
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
+def flux_musclcharacteristic_periodic(a, core_params):
+
+	dQ_minus = a - jnp.roll(a, 1, axis=1)
+	dQ_plus = jnp.roll(a, -1, axis=1) - a
+	
+	h = get_H(a, core_params)
+	u = get_u(a, core_params)
+	c = get_c(a, core_params)
+	b = core_params.gamma - 1
+
+	alpha_1_minus = (b / c**2) * ( (h-u**2) * dQ_minus[0] + u * dQ_minus[1] - dQ_minus[2] )
+	alpha_2_minus = 1 / (2 * c) * (dQ_minus[1] +(c - u) * dQ_minus[0] - c * alpha_1_minus )
+	alpha_0_minus = dQ_minus[0] - alpha_1_minus - alpha_2_minus
+	dD_minus = jnp.asarray([alpha_0_minus, alpha_1_minus, alpha_2_minus]) # D stands for Delta = L(Q_i) (Q_{...}-Q_{...})
+	
+	alpha_1_plus = (b / c**2) * ( (h-u**2) * dQ_plus[0] + u * dQ_plus[1] - dQ_plus[2] )
+	alpha_2_plus = 1 / (2 * c) * (dQ_plus[1] + (c - u) * dQ_plus[0] - c * alpha_1_plus )
+	alpha_0_plus = dQ_plus[0] - alpha_1_plus - alpha_2_plus
+	dD_plus = jnp.asarray([alpha_0_plus, alpha_1_plus, alpha_2_plus])
+
+	dD = vmap_minmod_3(dD_minus, (dD_plus + dD_minus) / 4, dD_plus)
+
+	ones = jnp.ones(a.shape[1])
+	r1 = jnp.asarray([ones, u - c, h - u * c])
+	r2 = jnp.asarray([ones, u,     u**2 / 2 ])
+	r3 = jnp.asarray([ones, u + c, h + u * c])
+	R = jnp.asarray([r1, r2, r3])
+
+	da_j = jnp.einsum('ijk,ik->jk', R, dD)
+
+	aL = a + da_j
+	aR = jnp.roll(a - da_j, -1, axis=1)
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
 
 def flux_periodic(a, core_params, flux_fn):
 	a_j = a
@@ -132,6 +270,24 @@ def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = No
 			flux_term = lambda a: flux_muscl_ghost(a, core_params)
 		elif core_params.bc == BoundaryCondition.PERIODIC:
 			flux_term = lambda a: flux_muscl_periodic(a, core_params)
+		else:
+			raise NotImplementedError
+
+	elif core_params.flux == Flux.MUSCLPRIMITIVE:
+
+		if core_params.bc == BoundaryCondition.GHOST:
+			flux_term = lambda a: flux_musclprimitive_ghost(a, core_params)
+		elif core_params.bc == BoundaryCondition.PERIODIC:
+			flux_term = lambda a: flux_musclprimitive_periodic(a, core_params)
+		else:
+			raise NotImplementedError
+
+	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
+
+		if core_params.bc == BoundaryCondition.GHOST:
+			flux_term = lambda a: flux_musclcharacteristic_ghost(a, core_params)
+		elif core_params.bc == BoundaryCondition.PERIODIC:
+			flux_term = lambda a: flux_musclcharacteristic_periodic(a, core_params)
 		else:
 			raise NotImplementedError
 
