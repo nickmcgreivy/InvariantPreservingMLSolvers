@@ -5,7 +5,7 @@ class Flux(Enum):
     LAXFRIEDRICHS = 'laxfriedrichs'
     ROE = 'roe'
     RUSANOV = 'rusanov'
-    MUSCL = 'muscl'
+    MUSCLCONSERVED = 'musclconserved'
     MUSCLPRIMITIVE = 'musclprimitive'
     MUSCLCHARACTERISTIC = 'musclcharacteristic'
 

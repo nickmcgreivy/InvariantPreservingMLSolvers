@@ -92,18 +92,76 @@ def flux_roe(aL, aR, core_params):
 	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * (corr1 + corr2 + corr3)
 
 
-def flux_muscl_ghost(a, core_params):
+def flux_periodic(a, core_params, flux_fn):
+	a_j = a
+	a_j_plus_one = jnp.roll(a, -1, axis=1)
+	F = flux_fn(a_j, a_j_plus_one, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
+
+def flux_ghost(a, core_params, flux_fn):
+	a = jnp.pad(a, ((0,0), (1,1)), mode='edge')
+	a_j = a[:, :-1]
+	a_j_plus_one = a[:, 1:]
+	F = flux_fn(a_j, a_j_plus_one, core_params)
+	F_R = F[:, 1:]
+	F_L = F[:, :-1]
+	return -(F_R - F_L)
+
+
+###### 
+# MUSCL FLUXES 
+######
+
+
+def limit_da(a, da, core_params):
+	ap = a + da
+	am = a - da
+	pp = get_p(ap, core_params)
+	pm = get_p(am, core_params)
+	return ~((pp < 0) | (pm < 0) | (ap[0] < 0) | (am[0] < 0)) * da
+
+def limit_dV(V, dV, core_params):
+	Vp = V + dV
+	Vm = V - dV
+	return ~((Vp[0] < 0) | (Vm[0] < 0) | (Vp[2] < 0) | (Vm[2] < 0)) * dV
+
+
+def flux_musclconserved_ghost(a, core_params):
 	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
 
 	da_j_minus = a[:,1:-1] - a[:, :-2]
 	da_j_plus  = a[:, 2:]  - a[:, 1:-1]
+	a = a[:, 1:-1]
 	da_j = vmap_minmod_3(da_j_minus, (da_j_plus + da_j_minus) / 4, da_j_plus)
-	aL = (a[:, 1:-1] + da_j)[:,:-1]
-	aR = (a[:, 1:-1] - da_j)[:, 1:]
+
+	da_j = limit_da(a, da_j, core_params)
+
+	aL = (a + da_j)[:,:-1]
+	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
 	F_R = F[:, 1:]
 	F_L = F[:, :-1]
 	return -(F_R - F_L)
+
+
+def flux_musclconserved_periodic(a, core_params):
+
+	da_j_minus = a - jnp.roll(a, 1, axis=1)
+	da_j_plus = jnp.roll(a, -1, axis=1) - a
+	da_j = vmap_minmod_3(da_j_minus, (da_j_plus + da_j_minus) / 4, da_j_plus)
+
+	da_j = limit_da(a, da_j, core_params)
+
+	aL = a + da_j
+	aR = jnp.roll(a - da_j, -1, axis=1)
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
 
 def flux_musclprimitive_ghost(a, core_params):
 	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
@@ -115,9 +173,13 @@ def flux_musclprimitive_ghost(a, core_params):
 
 	dV_j_minus = V[:,1:-1] - V[:, :-2]
 	dV_j_plus  = V[:, 2:]  - V[:, 1:-1]
+	V = V[:, 1:-1]
 	dV_j = vmap_minmod_3(dV_j_minus, (dV_j_plus + dV_j_minus) / 4, dV_j_plus)
-	VL = (V[:, 1:-1] + dV_j)[:,:-1]
-	VR = (V[:, 1:-1] - dV_j)[:, 1:]
+
+	dV_j = limit_dV(V, dV_j, core_params)
+
+	VL = (V + dV_j)[:,:-1]
+	VR = (V - dV_j)[:, 1:]
 
 	EL = VL[2]/(core_params.gamma - 1) + 0.5 * VL[0] * VL[1]**2
 	ER = VR[2]/(core_params.gamma - 1) + 0.5 * VR[0] * VR[1]**2
@@ -128,6 +190,33 @@ def flux_musclprimitive_ghost(a, core_params):
 	F_R = F[:, 1:]
 	F_L = F[:, :-1]
 	return -(F_R - F_L)
+
+
+def flux_musclprimitive_periodic(a, core_params):
+	rho = a[0]
+	u = get_u(a, core_params)
+	p = get_p(a, core_params)
+	V = jnp.asarray([rho, u, p])
+
+	dV_j_minus = V - jnp.roll(V, 1, axis=1)
+	dV_j_plus = jnp.roll(V, -1, axis=1) - V
+	dV_j = vmap_minmod_3(dV_j_minus, (dV_j_plus + dV_j_minus) / 4, dV_j_plus)
+
+	dV_j = limit_dV(V, dV_j, core_params)
+
+	VL = V + dV_j
+	VR = jnp.roll(V - dV_j, -1, axis=1)
+
+	EL = VL[2]/(core_params.gamma - 1) + 0.5 * VL[0] * VL[1]**2
+	ER = VR[2]/(core_params.gamma - 1) + 0.5 * VR[0] * VR[1]**2
+	aL = jnp.asarray([VL[0], VL[0] * VL[1], EL])
+	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
+
+	F  = flux_roe(aL, aR, core_params)
+	F_R = F
+	F_L = jnp.roll(F_R, 1, axis=1)
+	return -(F_R - F_L)
+
 
 def flux_musclcharacteristic_ghost(a, core_params):
 	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
@@ -142,6 +231,8 @@ def flux_musclcharacteristic_ghost(a, core_params):
 	u = get_u(a, core_params)
 	c = get_c(a, core_params)
 	b = core_params.gamma - 1
+
+	#### See SimJournal 4 for notation http://ammar-hakim.org/sj/euler-eigensystem.html
 
 	alpha_1_minus = (b / c**2) * ( (h-u**2) * dQ_minus[0] + u * dQ_minus[1] - dQ_minus[2] )
 	alpha_2_minus = 1 / (2 * c) * (dQ_minus[1] +(c - u) * dQ_minus[0] - c * alpha_1_minus )
@@ -163,6 +254,8 @@ def flux_musclcharacteristic_ghost(a, core_params):
 
 	da_j = jnp.einsum('ijk,ik->jk', R, dD)
 
+	da_j = limit_da(a, da_j, core_params)
+
 	aL = (a + da_j)[:,:-1]
 	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
@@ -170,41 +263,6 @@ def flux_musclcharacteristic_ghost(a, core_params):
 	F_L = F[:, :-1]
 	return -(F_R - F_L)
 
-def flux_muscl_periodic(a, core_params):
-
-	da_j_minus = a - jnp.roll(a, 1, axis=1)
-	da_j_plus = jnp.roll(a, -1, axis=1) - a
-	da_j = vmap_minmod_3(da_j_minus, (da_j_plus + da_j_minus) / 4, da_j_plus)
-
-	aL = a + da_j
-	aR = jnp.roll(a - da_j, -1, axis=1)
-	F  = flux_roe(aL, aR, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
-
-def flux_musclprimitive_periodic(a, core_params):
-	rho = a[0]
-	u = get_u(a, core_params)
-	p = get_p(a, core_params)
-	V = jnp.asarray([rho, u, p])
-
-	dV_j_minus = V - jnp.roll(V, 1, axis=1)
-	dV_j_plus = jnp.roll(V, -1, axis=1) - V
-	dV_j = vmap_minmod_3(dV_j_minus, (dV_j_plus + dV_j_minus) / 4, dV_j_plus)
-
-	VL = V + dV_j
-	VR = jnp.roll(V - dV_j, -1, axis=1)
-
-	EL = VL[2]/(core_params.gamma - 1) + 0.5 * VL[0] * VL[1]**2
-	ER = VR[2]/(core_params.gamma - 1) + 0.5 * VR[0] * VR[1]**2
-	aL = jnp.asarray([VL[0], VL[0] * VL[1], EL])
-	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
-
-	F  = flux_roe(aL, aR, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
 
 def flux_musclcharacteristic_periodic(a, core_params):
 
@@ -236,6 +294,8 @@ def flux_musclcharacteristic_periodic(a, core_params):
 
 	da_j = jnp.einsum('ijk,ik->jk', R, dD)
 
+	da_j = limit_da(a, da_j, core_params)
+
 	aL = a + da_j
 	aR = jnp.roll(a - da_j, -1, axis=1)
 	F  = flux_roe(aL, aR, core_params)
@@ -244,32 +304,15 @@ def flux_musclcharacteristic_periodic(a, core_params):
 	return -(F_R - F_L)
 
 
-def flux_periodic(a, core_params, flux_fn):
-	a_j = a
-	a_j_plus_one = jnp.roll(a, -1, axis=1)
-	F = flux_fn(a_j, a_j_plus_one, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
-
-def flux_ghost(a, core_params, flux_fn):
-	a = jnp.pad(a, ((0,0), (1,1)), mode='edge')
-	a_j = a[:, :-1]
-	a_j_plus_one = a[:, 1:]
-	F = flux_fn(a_j, a_j_plus_one, core_params)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
-
 
 def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None):
 
-	if core_params.flux == Flux.MUSCL:
+	if core_params.flux == Flux.MUSCLCONSERVED:
 
 		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: flux_muscl_ghost(a, core_params)
+			flux_term = lambda a: flux_musclconserved_ghost(a, core_params)
 		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: flux_muscl_periodic(a, core_params)
+			flux_term = lambda a: flux_musclconserved_periodic(a, core_params)
 		else:
 			raise NotImplementedError
 

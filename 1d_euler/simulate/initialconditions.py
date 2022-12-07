@@ -163,7 +163,7 @@ def shock_tube_problem_7(core_params):
 
 def shock_tube_problem_8(core_params):
 	Lx = core_params.Lx
-	X_SHOCK = Lx * 0.4
+	X_SHOCK = Lx * 0.8
 
 	rho_L = 0.1261192
 	u_L = 8.9047029
@@ -177,5 +177,29 @@ def shock_tube_problem_8(core_params):
 
 	def f_init(x, t):
 		return (x <= X_SHOCK) * jnp.asarray([rho_L, rho_L * u_L, E_L]) + (x > X_SHOCK) * jnp.asarray([rho_R, rho_R * u_R, E_R])
+
+	return f_init
+
+def shock_tube_blast_wave(core_params):
+	Lx = core_params.Lx
+	X_SHOCK_1 = Lx * 0.1
+	X_SHOCK_2 = Lx * 0.9
+
+	rho_L = 1.0
+	u_L = 0.0
+	p_L = 1000.
+	rho_M = 1.0
+	u_M = 0.0
+	p_M = 0.01
+	rho_R = 1.0
+	u_R = 0.0
+	p_R = 100.
+
+	E_L = p_L / (core_params.gamma - 1) + 1/2 * rho_L * u_L**2 
+	E_M = p_M / (core_params.gamma - 1) + 1/2 * rho_M * u_M**2 
+	E_R = p_R / (core_params.gamma - 1) + 1/2 * rho_R * u_R**2 
+
+	def f_init(x, t):
+		return (x <= X_SHOCK_1) * jnp.asarray([rho_L, rho_L * u_L, E_L]) + ((x > X_SHOCK_1) & (x <= X_SHOCK_2)) * jnp.asarray([rho_M, rho_M * u_M, E_M]) + (x > X_SHOCK_2) * jnp.asarray([rho_R, rho_R * u_R, E_R])
 
 	return f_init
