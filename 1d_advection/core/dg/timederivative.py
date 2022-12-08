@@ -49,8 +49,17 @@ def _centered_flux_DG_1D_advection(a, core_params):
     return 0.5 * (jnp.sum(a[:-1], axis=-1) + jnp.sum(alt[None, :] * a[1:], axis=-1))
 
 
-def _global_stabilization(f0, a):
-    raise NotImplementedError
+def _global_stabilization(f0, a, core_params):
+    alt = (jnp.ones(core_params.order+1) * -1) ** jnp.arange(core_params.order+1)
+    diff = jnp.roll(jnp.sum(alt[None, :] * a, axis=-1), -1) - jnp.sum(a, axis=-1)  # uR - uL
+    B = jnp.sum(f0 * diff)
+    c = 1.0
+    integral_f_dsi_dx = c * _volume_integral_DG_1D_advection(a)
+    V = jnp.sum(a * integral_f_dsi_dx)
+    dl2_old_dt = B + V
+    g = diff # could reconstruct instead but for now choosing not to
+    denom = jnp.sum(g * diff)
+    return f0 - jnp.nan_to_num((dl2_old_dt > 0.) * dl2_old_dt * g / denom)
 
 
 
@@ -66,6 +75,9 @@ def _flux_term_DG_1D_advection(a, core_params, global_stabilization=False, model
     if params is not None:
         delta_flux = stencil_flux_DG_1D_advection(a, model, params)
         flux_right = flux_right + delta_flux
+
+    if global_stabilization:
+        flux_right = _global_stabilization(flux_right, a, core_params)
 
     flux_left = jnp.roll(flux_right, 1, axis=0)
     return negonetok[None, :] * flux_left[:, None] - flux_right[:, None]
