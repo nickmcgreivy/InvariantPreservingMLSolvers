@@ -154,6 +154,12 @@ def map_f_to_FV(f, nx, dx, quad_func=_fixed_quad, n=5, t = 0.0):
 	return _vmap_fixed_quad(f_vmap, a, b) / dx
 
 
+def get_conserved_from_primitive(V, core_params):
+	# V is [rho, u, p]:
+	rho_u = V[0] * V[1]
+	E = V[2] / (core_params.gamma - 1) + 0.5 * V[0] * V[1]**2
+	return jnp.asarray([V[0], rho_u, E])
+
 def get_rho(a, core_params):
 	return a[0]
 
