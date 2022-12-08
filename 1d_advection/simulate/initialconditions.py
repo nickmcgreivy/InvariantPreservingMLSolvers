@@ -22,11 +22,11 @@ def get_a(f_init, t, core_params, nx):
 		res = map_f_to_DG(f_init, t, p, nx, dx, generate_legendre(p))
 		return res
 
-def f_init_sum_of_amplitudes(Lx, key=random.PRNGKey(0), min_num_modes=1, max_num_modes=6, min_k = 1, max_k = 4, amplitude_max=1.0):
+def f_init_sum_of_amplitudes(Lx, key=random.PRNGKey(0), min_num_modes=1, max_num_modes=6, min_k = 0, max_k = 3, amplitude_max=1.0):
 	key1, key2, key3, key4 = random.split(key, 4)
 	phases = random.uniform(key1, (max_num_modes,)) * 2 * PI
 	ks = random.randint(
-		key3, (max_num_modes,), min_k, max_k
+		key3, (max_num_modes,), min_k, max_k + 1
 	)
 	num_nonzero_modes = random.randint(
 		key2, (1,), min_num_modes, max_num_modes + 1
