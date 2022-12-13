@@ -5,6 +5,7 @@ from jax import vmap
 from flux import Flux
 from boundaryconditions import BoundaryCondition
 from helper import get_p, get_u, get_H, get_c
+from model import stencil_flux_FV_1D_euler
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -23,21 +24,6 @@ def f_j(a_j, core_params):
 	u = get_u(a_j, core_params)
 	p = get_p(a_j, core_params)
 	return jnp.asarray([rho_u, rho_usq + p, u * (p + E)])
-
-def lax_friedrichs_flux_periodic(a, core_params, dt, dx):
-	a_j_plus_one = jnp.roll(a, -1, axis=1)
-	F_R = 0.5 * (f_j(a, core_params) + f_j(a_j_plus_one, core_params)) - 0.5 * (dx / dt) * (a_j_plus_one - a)
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
-
-def lax_friedrichs_flux_ghost(a, core_params, dt, dx):
-	a = jnp.pad(a, ((0,0), (1,1)), mode='edge')
-	a_j = a[:, :-1]
-	a_j_plus_one = a[:, 1:]
-	F = 0.5 * (f_j(a_j, core_params) + f_j(a_j_plus_one, core_params)) - 0.5 * (dx / dt) * (a_j_plus_one - a_j)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
 
 def flux_laxfriedrichs(aL, aR, core_params, dt, dx):
 	return 0.5 * (f_j(aL, core_params) + f_j(aR, core_params)) - 0.5 * (dx / dt) * (aR - aL)
@@ -95,10 +81,8 @@ def flux_roe(aL, aR, core_params):
 def flux_periodic(a, core_params, flux_fn):
 	a_j = a
 	a_j_plus_one = jnp.roll(a, -1, axis=1)
-	F = flux_fn(a_j, a_j_plus_one, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
+	F_R = flux_fn(a_j, a_j_plus_one, core_params)
+	return F_R
 
 
 def flux_ghost(a, core_params, flux_fn):
@@ -106,10 +90,7 @@ def flux_ghost(a, core_params, flux_fn):
 	a_j = a[:, :-1]
 	a_j_plus_one = a[:, 1:]
 	F = flux_fn(a_j, a_j_plus_one, core_params)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
-
+	return F
 
 ###### 
 # MUSCL FLUXES 
@@ -142,9 +123,7 @@ def flux_musclconserved_ghost(a, core_params):
 	aL = (a + da_j)[:,:-1]
 	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
+	return F
 
 
 def flux_musclconserved_periodic(a, core_params):
@@ -157,10 +136,8 @@ def flux_musclconserved_periodic(a, core_params):
 
 	aL = a + da_j
 	aR = jnp.roll(a - da_j, -1, axis=1)
-	F  = flux_roe(aL, aR, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
+	F_R  = flux_roe(aL, aR, core_params)
+	return F_R
 
 
 def flux_musclprimitive_ghost(a, core_params):
@@ -187,9 +164,7 @@ def flux_musclprimitive_ghost(a, core_params):
 	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
 
 	F  = flux_roe(aL, aR, core_params)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
+	return F
 
 
 def flux_musclprimitive_periodic(a, core_params):
@@ -212,10 +187,8 @@ def flux_musclprimitive_periodic(a, core_params):
 	aL = jnp.asarray([VL[0], VL[0] * VL[1], EL])
 	aR = jnp.asarray([VR[0], VR[0] * VR[1], ER])
 
-	F  = flux_roe(aL, aR, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
+	F_R = flux_roe(aL, aR, core_params)
+	return F_R
 
 
 def flux_musclcharacteristic_ghost(a, core_params):
@@ -259,9 +232,7 @@ def flux_musclcharacteristic_ghost(a, core_params):
 	aL = (a + da_j)[:,:-1]
 	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
-	F_R = F[:, 1:]
-	F_L = F[:, :-1]
-	return -(F_R - F_L)
+	return F
 
 
 def flux_musclcharacteristic_periodic(a, core_params):
@@ -298,63 +269,83 @@ def flux_musclcharacteristic_periodic(a, core_params):
 
 	aL = a + da_j
 	aR = jnp.roll(a - da_j, -1, axis=1)
-	F  = flux_roe(aL, aR, core_params)
-	F_R = F
-	F_L = jnp.roll(F_R, 1, axis=1)
-	return -(F_R - F_L)
+	F_R  = flux_roe(aL, aR, core_params)
+	return F_R
 
+
+def _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn=None):
+	if core_params.flux == Flux.MUSCLCONSERVED:
+		flux_term = lambda a: flux_musclconserved_periodic(a, core_params)
+	elif core_params.flux == Flux.MUSCLPRIMITIVE:
+		flux_term = lambda a: flux_musclprimitive_periodic(a, core_params)
+	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
+		flux_term = lambda a: flux_musclcharacteristic_periodic(a, core_params)
+	elif core_params.flux == Flux.LAXFRIEDRICHS:
+		assert dt_fn is not None
+		flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
+		flux_term = flux_periodic(a, core_params, flux_fn)
+	elif core_params.flux == Flux.ROE:
+		flux_fn = flux_roe
+		flux_term = flux_periodic(a, core_params, flux_fn)
+	elif core_params.flux == Flux.RUSANOV:
+		flux_fn = flux_rusanov
+		flux_term = flux_periodic(a, core_params, flux_fn)
+	else:
+		raise NotImplementedError
+	return flux_term
+
+
+def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=None):
+	if core_params.flux == Flux.MUSCLCONSERVED:
+		flux_term = lambda a: flux_musclconserved_ghost(a, core_params)
+	elif core_params.flux == Flux.MUSCLPRIMITIVE:
+		flux_term = lambda a: flux_musclprimitive_ghost(a, core_params)
+	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
+		flux_term = lambda a: flux_musclcharacteristic_ghost(a, core_params)
+	elif core_params.flux == Flux.LAXFRIEDRICHS:
+		assert dt_fn is not None
+		flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
+		flux_term = flux_ghost(a, core_params, flux_fn)
+	elif core_params.flux == Flux.ROE:
+		flux_fn = flux_roe
+		flux_term = flux_ghost(a, core_params, flux_fn)
+	elif core_params.flux == Flux.RUSANOV:
+		flux_fn = flux_rusanov
+		flux_term = flux_ghost(a, core_params, flux_fn)
+	else:
+		raise NotImplementedError
+
+	return flux_term
 
 
 def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None):
 
-	if core_params.flux == Flux.MUSCLCONSERVED:
+	if core_params.bc == BoundaryCondition.GHOST:
+		flux_term = _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn = None)
+		def dadt(a):
+			nx = a.shape[1]
+			dx = core_params.Lx / nx
+			F = flux_term(a) 
+			if params is not None:
+				raise NotImplementedError
+				F = F + delta_F
+			F_R = F[:, 1:]
+			F_L = F[:, :-1]
+			return (F_L - F_R) / dx
 
-		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: flux_musclconserved_ghost(a, core_params)
-		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: flux_musclconserved_periodic(a, core_params)
-		else:
-			raise NotImplementedError
-
-	elif core_params.flux == Flux.MUSCLPRIMITIVE:
-
-		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: flux_musclprimitive_ghost(a, core_params)
-		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: flux_musclprimitive_periodic(a, core_params)
-		else:
-			raise NotImplementedError
-
-	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
-
-		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: flux_musclcharacteristic_ghost(a, core_params)
-		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: flux_musclcharacteristic_periodic(a, core_params)
-		else:
-			raise NotImplementedError
-
+	elif core_params.bc == BoundaryCondition.PERIODIC:
+		flux_term = _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn = None)
+		def dadt(a):
+			nx = a.shape[1]
+			dx = core_params.Lx / nx
+			flux_right = flux_term(a) 
+			if params is not None:
+				delta_flux = stencil_flux_FV_1D_euler(a, model, params)
+				flux_right = flux_right + delta_flux
+			flux_left = jnp.roll(flux_right, 1, axis=1)
+			return (flux_left - flux_right) / dx
 	else:
-		if core_params.flux == Flux.LAXFRIEDRICHS:
-			assert dt_fn is not None
-			flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
-		elif core_params.flux == Flux.ROE:
-			flux_fn = flux_roe
-		elif core_params.flux == Flux.RUSANOV:
-			flux_fn = flux_rusanov
-		else:
-			raise NotImplementedError
+		raise NotImplementedError
 
-		if core_params.bc == BoundaryCondition.GHOST:
-			flux_term = lambda a: flux_ghost(a, core_params, flux_fn)
-		elif core_params.bc == BoundaryCondition.PERIODIC:
-			flux_term = lambda a: flux_periodic(a, core_params, flux_fn)
-		else:
-			raise NotImplementedError
-
-	def dadt(a):
-		nx = a.shape[1]
-		dx = core_params.Lx / nx
-		return flux_term(a) / dx
 
 	return dadt

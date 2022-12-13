@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 from jax import vmap, jit
+from functools import partial 
 
 def _fixed_quad(f, a, b, n=5):
 	"""
@@ -154,6 +155,45 @@ def map_f_to_FV(f, nx, dx, quad_func=_fixed_quad, n=5, t = 0.0):
 	return _vmap_fixed_quad(f_vmap, a, b) / dx
 
 
+def evalf_1D(x, a, dx):
+	j = jnp.floor(x / dx).astype(int)
+	return a[:, j]
+
+
+@partial(
+	jit,
+	static_argnums=(
+		1,
+	),
+)
+def convert_FV_representation(a, nx_new, Lx):
+	"""
+	Converts one FV representation to another. Starts by writing a function
+	which does the mapping for a single timestep, then vmaps for many timesteps.
+	"""
+	nx_old = a.shape[0]
+	dx_old = Lx / nx_old
+	dx_new = Lx / nx_new
+
+	def convert_repr(a):
+
+		def f_old(x, t):
+			res = evalf_1D(x, a, dx_old)
+			return res
+
+		a_pre = map_f_to_FV(
+			f_old,
+			nx_new,
+			dx_new,
+			quad_func=_fixed_quad,
+			n=8,
+		)
+		return a_pre
+
+	return convert_repr(a)
+
+
+
 def get_conserved_from_primitive(V, core_params):
 	# V is [rho, u, p]:
 	rho_u = V[0] * V[1]
@@ -178,7 +218,7 @@ def get_c(a, core_params):
 	return jnp.sqrt(core_params.gamma * get_p(a, core_params) / get_rho(a, core_params))
 
 def get_entropy(a, core_params):
-    p = get_p(a, core_params)
-    rho = a[0]
-    gamma = core_params.gamma
-    return rho * (p / rho**gamma)**(1/(1+gamma))
+	p = get_p(a, core_params)
+	rho = a[0]
+	gamma = core_params.gamma
+	return rho * (p / rho**gamma)**(1/(1+gamma))
