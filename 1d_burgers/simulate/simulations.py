@@ -30,8 +30,14 @@ class BurgersFVSim():
 			nx = a.shape[0]
 			dx = core_params.Lx / nx
 			dt_advection = sim_params.cfl_safety * dx / c
-			dt_diffusion = jnp.nan_to_num(sim_params.cfl_safety * dx**2 / core_params.nu, nan = jnp.inf)
-			dt_forcing = jnp.nan_to_num(1 / (2 * jnp.pi * omega_max), nan = jnp.inf)
+			if core_params.nu > 0.0:
+				dt_diffusion = sim_params.cfl_safety * dx**2 / core_params.nu
+			else:
+				dt_diffusion = jnp.inf
+			if omega_max > 0.0:
+				dt_forcing = 1 / (2 * jnp.pi * omega_max)
+			else:
+				dt_forcing = jnp.inf
 			return jnp.minimum(jnp.minimum(dt_advection, dt_diffusion), dt_forcing)
 			
 		return get_dt

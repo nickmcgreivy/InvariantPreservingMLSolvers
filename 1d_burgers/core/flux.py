@@ -8,6 +8,8 @@ class Flux(Enum):
 
     GODUNOV = "godunov"
     WENO = "weno"
+    WENOBAD = "wenobad"
+    GODUNOVBAD = "godunovbad"
 
     def __str__(self):
         return self.value
