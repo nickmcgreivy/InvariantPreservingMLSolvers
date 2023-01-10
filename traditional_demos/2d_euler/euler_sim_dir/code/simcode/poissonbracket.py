@@ -360,7 +360,7 @@ def get_poisson_bracket(basedir, order, flux):
 
     LP = load_change_legendre_points_twice(basedir, order)
 
-    def centered(zeta, H):
+    def centered(zeta, H, dldt=None):
         alpha_R_points, alpha_T_points = H @ R.T, H @ T.T  # right, top
         zeta_R_points_minus = zeta @ Rm.T
         zeta_R_points_plus = np.roll(zeta, -1, axis=0) @ Rp.T
@@ -372,7 +372,7 @@ def get_poisson_bracket(basedir, order, flux):
         interp_T_leg = (alpha_T_points * zeta_T_points) @ P_inv.T
         return interp_R_leg, interp_T_leg
 
-    def upwind(zeta, H):
+    def upwind(zeta, H, dldt=None):
         alpha_R_points, alpha_T_points = H @ R.T, H @ T.T  # right, top
         zeta_R_points_minus = zeta @ Rm.T  # (nx, ny, order+1)
         zeta_R_points_plus = np.roll(zeta, -1, axis=0) @ Rp.T
@@ -388,7 +388,7 @@ def get_poisson_bracket(basedir, order, flux):
         interp_T_leg = vals_T @ P_inv.T
         return interp_R_leg, interp_T_leg
 
-    def vanleer(zeta, H):
+    def vanleer(zeta, H, dldt=None):
         assert zeta.shape[-1] == 1
 
         alpha_R_points = H @ R.T
@@ -401,7 +401,7 @@ def get_poisson_bracket(basedir, order, flux):
         s_R_minus = minmod_3(2 * s_R_left, s_R_centered, 2 * s_R_right)
         s_R_plus = np.roll(s_R_minus, -1, axis=0)
 
-        vals_R = (alpha_R_points > 0) * alpha_R_points * (zeta_R_points_minus + s_R_minus / 2) + (
+        F_R = (alpha_R_points > 0) * alpha_R_points * (zeta_R_points_minus + s_R_minus / 2) + (
             alpha_R_points <= 0
         ) * alpha_R_points * (zeta_R_points_plus - s_R_plus / 2)
 
@@ -416,14 +416,14 @@ def get_poisson_bracket(basedir, order, flux):
         s_T_minus = minmod_3(2 * s_T_left, s_T_centered, 2 * s_T_right)
         s_T_plus = np.roll(s_T_minus, -1, axis=1)
 
-        vals_T = (alpha_T_points > 0) * alpha_T_points * (zeta_T_points_minus + s_T_minus / 2) + (
+        F_T = (alpha_T_points > 0) * alpha_T_points * (zeta_T_points_minus + s_T_minus / 2) + (
             alpha_T_points <= 0
         ) * alpha_T_points * (zeta_T_points_plus - s_T_plus / 2)
 
 
-        return vals_R, vals_T
+        return F_R, F_T
 
-    def conservation(zeta, H, REDUC = 1.0):
+    def conservation(zeta, H, dldt=None):
         assert zeta.shape[-1] == 1
         assert zeta.shape[0] == zeta.shape[1]
 
@@ -479,7 +479,7 @@ def get_poisson_bracket(basedir, order, flux):
         return F_R_prime, F_T_prime
 
 
-    def energy_conservation(zeta, H, REDUC = 1.0):
+    def energy_conservation(zeta, H, dldt=None):
         assert zeta.shape[-1] == 1
         assert zeta.shape[0] == zeta.shape[1]
 
@@ -541,24 +541,23 @@ def get_poisson_bracket(basedir, order, flux):
         return F_R_prime, F_T_prime
 
 
-
+    """
     if flux == Flux.CENTERED:
         interp_func = centered
-    if flux == Flux.UPWIND:
+    elif flux == Flux.UPWIND:
         interp_func = upwind
-    if flux == Flux.VANLEER:
+    elif flux == Flux.VANLEER:
         interp_func = vanleer
-    if flux == Flux.CONSERVATION:
-        interp_func = conservation
-    if flux == Flux.CONSERVATION2:
-        interp_func = lambda zeta, H: conservation(zeta, H, REDUC=0.75)
-    if flux == Flux.ENERGYCONSERVATION:
+    elif flux == Flux.CONSERVATION:
+        interp_func = lambda zeta, H, dldt: conservation(zeta, H, dldt=dldt)
+    elif flux == Flux.ENERGYCONSERVATION:
         interp_func = vanleer
-    if flux == Flux.ENERGYCONSERVATION2:
-        interp_func = vanleer
+    else:
+        raise NotImplementedError
 
-    def poisson_bracket(zeta, H):
-        interp_R, interp_T = interp_func(zeta, H)
+    
+    def poisson_bracket(zeta, H, dldt=None):
+        interp_R, interp_T = interp_func(zeta, H, dldt=dldt)
         interp_L = np.roll(interp_R, 1, axis=0)
         interp_B = np.roll(interp_T, 1, axis=1)
         boundary_term = (
@@ -569,43 +568,8 @@ def get_poisson_bracket(basedir, order, flux):
         )
         volume_term = np.einsum("ikl,xyk,xyl->xyi", V, zeta, H)
         return volume_term - boundary_term
+    """
+    def poisson_bracket(zeta, H):
+        return vanleer(zeta, H)
 
     return poisson_bracket
-
-
-###############
-# (phi - n)
-###############
-
-
-def get_diff(order, dx, dy):
-    fe_ip = leg_FE_inner_product(order) * dx * dy
-    l_ip = legendre_inner_product(order) * dx * dy
-
-    def diff_term(phi, n):
-        phi_term = phi @ fe_ip.T
-        n_term = l_ip[None, None, :] * n
-        return phi_term - n_term
-
-    return diff_term
-
-
-###############
-# kappa d phi / dy
-###############
-
-
-def get_deriv_y(order, dx, dy):
-    """
-    Computes \int phi_i dH/dy dx dy
-    """
-    Vd = deriv_y_leg_FE_inner_product(order) * dx
-    Bt = leg_FE_top_integrate(order) * dx
-    Bb = leg_FE_bottom_integrate(order) * dx
-    alt_tb = get_topbottom_alternate(order)
-    full_M = -Vd.T + Bt.T - Bb.T
-
-    def deriv_term(phi):
-        return phi @ full_M
-
-    return deriv_term

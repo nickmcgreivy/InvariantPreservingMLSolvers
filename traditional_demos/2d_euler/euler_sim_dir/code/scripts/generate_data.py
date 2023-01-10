@@ -33,7 +33,6 @@ def create_dataset(args, data_dir, unique_id, nx, ny, nt):
         "{}/{}_{}x{}.hdf5".format(data_dir, unique_id, nx, ny),
         "w",
     )
-
     dset_a_new = f.create_dataset(
         "a_data", (nt, nx, ny, 1), dtype="float64"
     )
@@ -46,8 +45,8 @@ def write_dataset(args, data_dir, unique_id, a):
         "{}/{}_{}x{}.hdf5".format(data_dir, unique_id, nx, ny),
         "r+",
     )
-    dset_a = f["a_data"]
-    dset_a = a
+    dset = f["a_data"]
+    dset[:] = a
     f.close()
 
 
@@ -137,7 +136,7 @@ def simulate_2D(
 
 
 def generate_eval_data(args, data_dir, a0, nt, dt, flux, dldt = None):
-    data, _ = generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = None)
+    data, _ = generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = dldt)
     return data
 
 
@@ -210,6 +209,7 @@ def main():
     a0_exact = f_to_FV(nx_exact, ny_exact, args.Lx, args.Ly, 0, f_init, t0, n = 8)
     a0 = convert_representation(a0_exact[None], 0, 0, nx, ny, args.Lx, args.Ly)[0]
 
+
     #### generate timesteps
     dx = args.Lx / nx
     dy = args.Ly / ny
@@ -237,6 +237,7 @@ def main():
     write_dataset(args, data_dir, unique_ids[0], exact_data_ds)
 
 
+
     #### create data for low-resolution simulations
     vanleer_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.VANLEER)
     conservation_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.CONSERVATION, dldt = 0.0)
@@ -246,6 +247,7 @@ def main():
 
     #### store data for low-resolution simulations
     vanleer_data_ds = vanleer_data[::nt_one]
+
     write_dataset(args, data_dir, unique_ids[1], vanleer_data_ds)
     conservation_data_ds = conservation_data[::nt_one]
     write_dataset(args, data_dir, unique_ids[2], conservation_data_ds)
