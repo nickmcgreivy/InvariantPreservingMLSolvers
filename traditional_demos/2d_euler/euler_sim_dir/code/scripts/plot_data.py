@@ -7,6 +7,8 @@ from matplotlib.animation import FuncAnimation
 from matplotlib import animation
 import seaborn as sns
 import matplotlib as mpl
+from jax import config
+config.update("jax_enable_x64", True)
 
 fonts = {
     # Use LaTeX to write all text
@@ -53,16 +55,16 @@ def average_half(zeta):
 
 def plot_data():
     nx = 128
-    UPSAMPLE = 2
+    UPSAMPLE = 4
     nx_exact = nx * UPSAMPLE
     unique_ids = ["exact", "vanleer", "gs0", "gs_dldtexact", "ec", "ec_dldtexact"]
     labels = [
-    "MUSCL\n{}x{}".format(nx_exact, nx_exact), 
-    "MUSCL\n{}x{}".format(nx, nx),
-    "ENC {}x{}\nzero damping".format(nx, nx), # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
-    "ENC {}x{}\nexact damping".format(nx, nx), # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
-    "EC {}x{}\nnormal damping".format(nx, nx), # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
-    "EC {}x{}\nexact damping".format(nx, nx), # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+        "MUSCL\n{}x{}".format(nx_exact, nx_exact), 
+        "MUSCL",
+        r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
+        r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+        r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
+        r"EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$", # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
     ]
     
     N = len(unique_ids)

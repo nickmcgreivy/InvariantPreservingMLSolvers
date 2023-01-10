@@ -20,7 +20,7 @@ from timederivative import (
     time_derivative_euler
 )
 from rungekutta import ssp_rk3
-from helper import f_to_FV, _evalf_2D_integrate, nabla
+from helper import f_to_FV, _evalf_2D_integrate, nabla, convert_representation
 from poissonsolver import get_poisson_solver
 from poissonbracket import get_poisson_bracket
 from diffusion import get_diffusion_func
@@ -49,34 +49,6 @@ def write_dataset(args, data_dir, unique_id, a):
     dset[:] = a
     f.close()
 
-
-@partial(
-    jit,
-    static_argnums=(
-        1,
-        2,
-        3,
-        4,
-        7,
-    ),
-)
-def convert_representation(
-    a, order_new, order_high, nx_new, ny_new, Lx, Ly, n = 8
-):
-    _, nx_high, ny_high = a.shape[0:3]
-    dx_high = Lx / nx_high
-    dy_high = Ly / ny_high
-
-    def convert_repr(a):
-        def f_high(x, y, t):
-            return _evalf_2D_integrate(x, y, a, dx_high, dy_high, order_high)
-
-        t0 = 0.0
-        return f_to_FV(nx_new, ny_new, Lx, Ly, order_new, f_high, t0, n=n)
-
-    vmap_convert_repr = vmap(convert_repr)
-
-    return vmap_convert_repr(a)
 
 
 def _scan(sol, x, rk_F):
@@ -136,18 +108,6 @@ def simulate_2D(
 
 
 def generate_eval_data(args, data_dir, a0, nt, dt, flux, dldt = None):
-    data, _ = generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = dldt)
-    return data
-
-
-def generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = None):
-
-    @vmap
-    def l2_norm(a):
-        """
-        a should be (nx, ny, 1), vmapped makes it (_, nx, ny, 1)
-        """
-        return 1/2 * np.mean(a**2)
 
     nx, ny = a0.shape[0:2]
 
@@ -172,7 +132,7 @@ def generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = None):
             args.Lx,
             args.Ly,
             dt,
-            nt+1,
+            nt,
             flux,
             output=True,
             f_phi=f_phi,
@@ -183,8 +143,21 @@ def generate_data_dldt(args, data_dir, a0, nt, dt, flux, dldt = None):
             rk=FUNCTION_MAP[args.runge_kutta],
         )
 
-    a_data = simulate(a0, 0.0, nt, dt)
+    return simulate(a0, 0.0, nt, dt)
 
+def generate_exact_data(args, data_dir, a0, nt, dt, flux):
+    nx, ny = a0.shape[0:2]
+    dx = args.Lx / nx
+    dy = args.Ly / ny
+
+    @vmap
+    def l2_norm(a):
+        """
+        a should be (nx, ny, 1), vmapped makes it (_, nx, ny, 1)
+        """
+        return 1/2 * np.sum(a**2) * dx * dy
+
+    a_data = generate_eval_data(args, data_dir, a0, nt + 1, dt, flux)
     dldt_out = (l2_norm(a_data[1:]) - l2_norm(a_data[:-1])) / dt
     return a_data[:-1], dldt_out
 
@@ -194,7 +167,7 @@ def main():
 
     nx = 128
     ny = nx
-    UPSAMPLE = 2
+    UPSAMPLE = 4
     nx_exact = nx * UPSAMPLE
     ny_exact = nx_exact
     Tf = 60.0
@@ -229,18 +202,18 @@ def main():
 
 
     #### generate exact data at intervals
-    exact_data, dldt_exact = generate_data_dldt(args, data_dir, a0_exact, nt_exact, dt_exact, flux_exact)
+    exact_data, dldt_exact = generate_exact_data(args, data_dir, a0_exact, nt_exact, dt_exact, flux_exact)
 
     #### store exact data at int(Tf) intervals
     exact_data_ds = exact_data[::nt_one*UPSAMPLE]
-    dldt_exact_ds = dldt_exact[::nt_one*UPSAMPLE]
+    dldt_exact_ds = dldt_exact[::UPSAMPLE]
     write_dataset(args, data_dir, unique_ids[0], exact_data_ds)
 
 
 
     #### create data for low-resolution simulations
     vanleer_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.VANLEER)
-    conservation_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.CONSERVATION, dldt = 0.0)
+    conservation_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.CONSERVATION, dldt = np.zeros(dldt_exact_ds.shape))
     conservation_dldtexact_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.CONSERVATION, dldt = dldt_exact_ds)
     energyconservation_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.ENERGYCONSERVATION)
     energyconservation_dldtexact_data = generate_eval_data(args, data_dir, a0, nt, dt, Flux.ENERGYCONSERVATION, dldt = dldt_exact_ds)

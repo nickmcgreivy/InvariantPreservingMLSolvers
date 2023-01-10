@@ -1,11 +1,12 @@
 import jax.numpy as np
 import numpy as onp
+from functools import partial
 from basisfunctions import (
     legendre_npbasis,
     node_locations,
     legendre_inner_product,
 )
-from jax import vmap, hessian
+from jax import vmap, hessian, jit
 
 
 def _trapezoidal_integration(f, xi, xf, yi, yf, n=None):
@@ -260,3 +261,32 @@ def nabla(f):
     """
     H = hessian(f)
     return lambda x, y: np.trace(H(x, y))
+
+
+@partial(
+    jit,
+    static_argnums=(
+        1,
+        2,
+        3,
+        4,
+        7,
+    ),
+)
+def convert_representation(
+    a, order_new, order_high, nx_new, ny_new, Lx, Ly, n = 8
+):
+    _, nx_high, ny_high = a.shape[0:3]
+    dx_high = Lx / nx_high
+    dy_high = Ly / ny_high
+
+    def convert_repr(a):
+        def f_high(x, y, t):
+            return _evalf_2D_integrate(x, y, a, dx_high, dy_high, order_high)
+
+        t0 = 0.0
+        return f_to_FV(nx_new, ny_new, Lx, Ly, order_new, f_high, t0, n=n)
+
+    vmap_convert_repr = vmap(convert_repr)
+
+    return vmap_convert_repr(a)
