@@ -145,7 +145,7 @@ def generate_eval_data(args, data_dir, a0, nt, dt, flux, dldt = None):
 
     return simulate(a0, 0.0, nt, dt)
 
-def generate_exact_data(args, data_dir, a0, nt, dt, flux):
+def generate_exact_data(args, data_dir, a0, nt_one, dt, Tf, flux):
     nx, ny = a0.shape[0:2]
     dx = args.Lx / nx
     dy = args.Ly / ny
@@ -157,9 +157,21 @@ def generate_exact_data(args, data_dir, a0, nt, dt, flux):
         """
         return 1/2 * np.sum(a**2) * dx * dy
 
-    a_data = generate_eval_data(args, data_dir, a0, nt + 1, dt, flux)
-    dldt_out = (l2_norm(a_data[1:]) - l2_norm(a_data[:-1])) / dt
-    return a_data[:-1], dldt_out
+    data_list = []
+    dldt_list = []
+    for t in range(int(Tf)):
+        print(t)
+        a_data = generate_eval_data(args, data_dir, a0, nt_one + 1, dt, flux)
+        dldt_out = (l2_norm(a_data[1:]) - l2_norm(a_data[:-1])) / dt
+        
+        data_list.append(a0)
+        dldt_list.append(dldt_out)
+        a0 = a_data[-1]
+
+    a_data = np.asarray(data_list)
+    dldt_out = np.asarray(dldt_list).reshape(-1)
+
+    return a_data, dldt_out
 
 
 def main():
@@ -192,6 +204,7 @@ def main():
     nt = int(Tf / dt)
     dt_exact = dt / UPSAMPLE
     nt_exact = nt * UPSAMPLE
+    nt_one_exact = nt_one * UPSAMPLE
     flux_exact = Flux.VANLEER
 
     ### create datasets
@@ -202,10 +215,10 @@ def main():
 
 
     #### generate exact data at intervals
-    exact_data, dldt_exact = generate_exact_data(args, data_dir, a0_exact, nt_exact, dt_exact, flux_exact)
+    exact_data, dldt_exact = generate_exact_data(args, data_dir, a0_exact, nt_one_exact, dt_exact, Tf, flux_exact)
 
     #### store exact data at int(Tf) intervals
-    exact_data_ds = exact_data[::nt_one*UPSAMPLE]
+    exact_data_ds = exact_data#[::nt_one*UPSAMPLE]
     dldt_exact_ds = dldt_exact[::UPSAMPLE]
     write_dataset(args, data_dir, unique_ids[0], exact_data_ds)
 

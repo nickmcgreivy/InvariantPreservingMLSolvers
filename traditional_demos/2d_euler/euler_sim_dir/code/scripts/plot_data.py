@@ -93,7 +93,7 @@ def plot_data():
         index = int(t * (f_exact["a_data"].shape[0] - 1))
         zeta_exact = f_exact["a_data"][index]
         plot_axs(
-            average_half(zeta_exact),
+            average_half(average_half(zeta_exact)),
             axs[j,0],
             Lx,
             Ly,
@@ -113,7 +113,7 @@ def plot_data():
 
 
             im = plot_axs(
-                zeta,
+                average_half(zeta),
                 axs[j,k],
                 Lx,
                 Ly,
@@ -149,4 +149,5 @@ def plot_data():
 
 plot_data()
 #plt.savefig('vorticity_plots.eps')
+#plt.savefig('vorticity_plots.png')
 plt.show()

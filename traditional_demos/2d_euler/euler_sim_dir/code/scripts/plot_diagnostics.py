@@ -193,6 +193,7 @@ fig.legend(vals, keys,loc=(0.13,0.595), prop={'size': 13}, ncol=2)
 
 fig.tight_layout()
 
-
+#plt.savefig('euler_diagnostics.eps')
+#plt.savefig('euler_diagnostics.png')
 
 plt.show()
