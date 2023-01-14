@@ -5,13 +5,13 @@ from timederivative import time_derivative_FV_1D_euler
 
 class EulerFVSim():
 
-	def __init__(self, core_params, sim_params):
+	def __init__(self, core_params, sim_params, deta_dt_ratio = None, G = None):
 		self.dt_fn = self.get_dt_fn(core_params, sim_params)
-		self.step_fn = self.get_step_fn(core_params, sim_params)
+		self.step_fn = self.get_step_fn(core_params, sim_params, deta_dt_ratio = deta_dt_ratio, G=G)
 		
 
-	def get_step_fn(self, core_params, sim_params):
-		self.F = time_derivative_FV_1D_euler(core_params, dt_fn = self.dt_fn)
+	def get_step_fn(self, core_params, sim_params, deta_dt_ratio = None, G = None):
+		self.F = time_derivative_FV_1D_euler(core_params, dt_fn = self.dt_fn, deta_dt_ratio = deta_dt_ratio, G = G)
 		return lambda a, dt: sim_params.rk_fn(a, self.F, dt)
 
 

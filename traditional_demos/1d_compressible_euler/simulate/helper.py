@@ -222,3 +222,12 @@ def get_entropy(a, core_params):
 	rho = a[0]
 	gamma = core_params.gamma
 	return rho * (p / rho**gamma)**(1/(1+gamma))
+
+def get_w(a, core_params):
+	p = get_p(a, core_params)
+	gamma = core_params.gamma
+	rho = a[0]
+	rhou = a[1]
+	E = a[2]
+	p_star = (gamma - 1) / (gamma + 1) * (p / rho**gamma) ** (1/(1+gamma))
+	return p_star / p * jnp.asarray([E, -rhou, rho])

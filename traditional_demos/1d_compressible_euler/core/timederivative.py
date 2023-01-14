@@ -4,18 +4,11 @@ from jax import vmap
 
 from flux import Flux
 from boundaryconditions import BoundaryCondition
-from helper import get_p, get_u, get_H, get_c
+from helper import get_p, get_u, get_H, get_c, get_w
 
 
 
 def pad(a, n):
-	"""
-	uL = jnp.asarray([1.0, 0.75, 2.78125])
-	uR = jnp.asarray([0.125, 0.0, 0.25])
-	uL = jnp.repeat(uL[:,None],n,axis=1)
-	uR = jnp.repeat(uR[:,None],n,axis=1)
-	return jnp.concatenate((uL, a, uR), axis=1)
-	"""
 	mode = 'edge'
 	return jnp.pad(a, ((0,0), (n,n)), mode=mode)
 
@@ -297,13 +290,13 @@ def _time_derivative_euler_periodic(core_params, dt_fn=None):
 	elif core_params.flux == Flux.LAXFRIEDRICHS:
 		assert dt_fn is not None
 		flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
-		flux_term = flux_periodic(a, core_params, flux_fn)
+		flux_term = lambda a: flux_periodic(a, core_params, flux_fn)
 	elif core_params.flux == Flux.ROE:
 		flux_fn = flux_roe
-		flux_term = flux_periodic(a, core_params, flux_fn)
+		flux_term = lambda a: flux_periodic(a, core_params, flux_fn)
 	elif core_params.flux == Flux.RUSANOV:
 		flux_fn = flux_rusanov
-		flux_term = flux_periodic(a, core_params, flux_fn)
+		flux_term = lambda a: flux_periodic(a, core_params, flux_fn)
 	else:
 		raise NotImplementedError
 	return flux_term
@@ -332,31 +325,45 @@ def _time_derivative_euler_ghost(core_params, dt_fn=None):
 	return flux_term
 
 
-def time_derivative_FV_1D_euler(core_params, dt_fn = None):
+def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None, G = None):
 
 	if core_params.bc == BoundaryCondition.GHOST:
 		flux_term = _time_derivative_euler_ghost(core_params, dt_fn = dt_fn)
 		def dadt(a):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
-			F = flux_term(a)
-			#ave = (F[:,0] + F[:,-1]) / 2
-			F = F.at[:, 0].set(0.0)
-			F = F.at[:,-1].set(0.0)
+			F = jnp.nan_to_num(flux_term(a))# (3, nx + 1)
+			if G is not None:
+				assert deta_dt_ratio is not None
+				G_R = G(a, core_params) # (3, nx-1)
+				w = get_w(a, core_params) # (3, nx)
+				diff_w = (w[:,1:] - w[:,:-1])
+				deta_dt_old = jnp.sum(F[:,1:-1] * diff_w)
+				deta_dt_new = deta_dt_ratio * deta_dt_old# + jnp.sum(F[:, -1] * w[:, -1]) - jnp.sum(F[:, 0] * w[:, 0])
+				denom = jnp.sum(G_R * diff_w)
+				F = F.at[:,1:-1].add(jnp.nan_to_num((deta_dt_new - deta_dt_old) * G_R / denom))
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
 			return (F_L - F_R) / dx
-
 	elif core_params.bc == BoundaryCondition.PERIODIC:
 		flux_term = _time_derivative_euler_periodic(core_params, dt_fn = dt_fn)
 		def dadt(a):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
-			flux_right = flux_term(a) 
-			flux_left = jnp.roll(flux_right, 1, axis=1)
-			return (flux_left - flux_right) / dx
+			F_R = jnp.nan_to_num(flux_term(a)) 
+			if G is not None:
+				assert deta_dt_ratio is not None
+				G_R = G(a, core_params) # (3, nx)
+				w = get_w(a, core_params) # (3, nx)
+				w_plus_one = jnp.roll(w, -1, axis=-1) 
+				diff_w = (w_plus_one - w)
+				deta_dt_old = jnp.sum(F_R * diff_w)
+				deta_dt_new = deta_dt_ratio * deta_dt_old
+				denom = jnp.sum(G_R * diff_w)
+				F_R = F_R + (deta_dt_new - deta_dt_old) * G_R / denom
+			F_L = jnp.roll(F_R, 1, axis=1)
+			return (F_L - F_R) / dx
 	else:
 		raise NotImplementedError
-
 
 	return dadt
