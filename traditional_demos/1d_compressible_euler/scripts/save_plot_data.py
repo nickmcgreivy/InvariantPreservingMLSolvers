@@ -58,7 +58,7 @@ def plot_a(a, core_params, mins = [0.0 - 2e-2] * 3, maxs= [1.0 + 5e-2] * 3):
     axs[0].set_ylim([mins[0], maxs[0]])
     
     axs[1].plot(x, get_u(a, core_params))
-    axs[1].set_title(r'$u$')
+    axs[1].set_title(r'$v$')
     axs[1].set_ylim([mins[1], maxs[1]])
     
     axs[2].plot(x, get_p(a, core_params))
@@ -115,7 +115,7 @@ def G_primitive(a, core_params):
     rho = a[0]
     zeros = jnp.zeros(rho.shape)
     u = a[1] / a[0]
-    G = jnp.concatenate([rho[None], u[None], p[None]],axis=0)
+    G = jnp.concatenate([zeros[None], u[None], p[None]],axis=0)
     return G[:,1:] - G[:,:-1]
 
 def G_w(a, core_params):
@@ -162,31 +162,36 @@ color2 = "green"
 color3 = "black"
 
 i=2
-R = 1.5
+R = 1.0
 fs = 14
-fig, axs = plt.subplots(1,3, figsize=(8.5*R,2*R))
+figsize = (4*R,3*R)
+fig0, ax0 = plt.subplots(1,1, figsize=figsize)
+fig1, ax1 = plt.subplots(1,1, figsize=figsize)
+fig2, ax2 = plt.subplots(1,1, figsize=figsize)
+
+axs = [ax0, ax1, ax2]
 
 x = jnp.linspace(0,1.0,trajectory_exact[i].shape[1])
 
-axs[0].plot(x,get_rho(trajectory_zero[i],core_params),label=label0,color=color0)
+#axs[0].plot(x,get_rho(trajectory_zero[i],core_params),label=label0,color=color0)
 axs[0].plot(x,get_rho(trajectory_half[i],core_params),label=label1,color=color1)
 axs[0].plot(x,get_rho(trajectory_double[i],core_params),label=label2,color=color2)
 axs[0].plot(x,get_rho(trajectory_exact[i],core_params),label=label3, color=color3)
-axs[0].set_ylim([0.0, 1.02])
+axs[0].set_ylim([0.0, 1.06])
 axs[0].set_xlim([0.0, 1.0])
 
-axs[1].plot(x,get_u(trajectory_zero[i],core_params),label=label0,color=color0)
+#axs[1].plot(x,get_u(trajectory_zero[i],core_params),label=label0,color=color0)
 axs[1].plot(x,get_u(trajectory_half[i],core_params),label=label1,color=color1)
 axs[1].plot(x,get_u(trajectory_double[i],core_params),label=label2,color=color2)
 axs[1].plot(x,get_u(trajectory_exact[i],core_params),label=label3, color=color3)
 axs[1].set_ylim([-0.05, 1.65])
 axs[1].set_xlim([0.0, 1.0])
 
-axs[2].plot(x,get_p(trajectory_zero[i],core_params),label=label0,color=color0)
+#axs[2].plot(x,get_p(trajectory_zero[i],core_params),label=label0,color=color0)
 axs[2].plot(x,get_p(trajectory_half[i],core_params),label=label1,color=color1)
 axs[2].plot(x,get_p(trajectory_double[i],core_params),label=label2,color=color2)
 axs[2].plot(x,get_p(trajectory_exact[i],core_params),label=label3, color=color3)
-axs[2].set_ylim([0.0, 1.02])
+axs[2].set_ylim([0.0, 1.06])
 axs[2].set_xlim([0.0, 1.0])
 
 j=0
@@ -218,14 +223,20 @@ axs[j].set_xlabel(r'$p$', fontsize=fs)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(),loc=(0.20,0.43), prop={'size': fs*0.95}, frameon=False)
-fig.tight_layout()
+fig0.legend(by_label.values(), by_label.keys(),loc=(0.58,0.53), prop={'size': fs*0.95}, frameon=False)
+fig0.tight_layout()
+fig1.tight_layout()
+fig2.tight_layout()
 
 
 # In[ ]:
 
-plt.savefig("compressible_euler_demo.eps")
-plt.savefig("compressible_euler_demo.png")
+fig0.savefig("compressible_euler_rho_demo.eps")
+fig0.savefig("compressible_euler_rho_demo.png")
+fig1.savefig("compressible_euler_v_demo.eps")
+fig1.savefig("compressible_euler_v_demo.png")
+fig2.savefig("compressible_euler_p_demo.eps")
+fig2.savefig("compressible_euler_p_demo.png")
 
 plt.show()
 

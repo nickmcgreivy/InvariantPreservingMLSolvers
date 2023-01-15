@@ -332,7 +332,7 @@ def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None,
 		def dadt(a):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
-			F = jnp.nan_to_num(flux_term(a))# (3, nx + 1)
+			F = flux_term(a)# (3, nx + 1)
 			if G is not None:
 				assert deta_dt_ratio is not None
 				G_R = G(a, core_params) # (3, nx-1)
@@ -341,7 +341,7 @@ def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None,
 				deta_dt_old = jnp.sum(F[:,1:-1] * diff_w)
 				deta_dt_new = deta_dt_ratio * deta_dt_old# + jnp.sum(F[:, -1] * w[:, -1]) - jnp.sum(F[:, 0] * w[:, 0])
 				denom = jnp.sum(G_R * diff_w)
-				F = F.at[:,1:-1].add(jnp.nan_to_num((deta_dt_new - deta_dt_old) * G_R / denom))
+				F = F.at[:,1:-1].add((deta_dt_new - deta_dt_old) * G_R / denom)
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
 			return (F_L - F_R) / dx
