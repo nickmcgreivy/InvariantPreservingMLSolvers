@@ -210,7 +210,7 @@ axs[j].set_yticks([0.0,1.5])
 axs[j].set_yticklabels(["0","1.5"], fontsize=fs)
 axs[j].spines['top'].set_visible(False)
 axs[j].spines['right'].set_visible(False)
-axs[j].set_xlabel(r'$u$', fontsize=fs)
+axs[j].set_xlabel(r'$v$', fontsize=fs)
 
 j=2
 axs[j].set_xticks([0.0,1.0])

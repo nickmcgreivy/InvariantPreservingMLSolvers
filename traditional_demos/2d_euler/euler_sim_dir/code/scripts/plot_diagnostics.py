@@ -176,9 +176,9 @@ axs[2].spines['right'].set_visible(False)
 axs[0].yaxis.set_label_position("right")
 axs[1].yaxis.set_label_position("right")
 axs[2].yaxis.set_label_position("right")
-axs[2].set_ylabel('Vorticity correlation', usetex=usetex, fontsize=14)
-axs[1].set_ylabel("Enstrophy", usetex=usetex, fontsize=14)
-axs[0].set_ylabel("Energy", usetex=usetex, fontsize=14)
+axs[2].set_ylabel('Vorticity correlation', usetex=usetex, fontsize=16)
+axs[1].set_ylabel("Enstrophy", usetex=usetex, fontsize=16)
+axs[0].set_ylabel("Energy", usetex=usetex, fontsize=16)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
@@ -193,7 +193,7 @@ fig.legend(vals, keys,loc=(0.13,0.595), prop={'size': 13}, ncol=2)
 
 fig.tight_layout()
 
-#plt.savefig('euler_diagnostics.eps')
-#plt.savefig('euler_diagnostics.png')
+plt.savefig('euler_diagnostics.eps')
+plt.savefig('euler_diagnostics.png')
 
 plt.show()

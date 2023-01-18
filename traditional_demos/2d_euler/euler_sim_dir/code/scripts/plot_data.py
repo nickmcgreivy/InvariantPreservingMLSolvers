@@ -55,12 +55,13 @@ def average_half(zeta):
 
 def plot_data():
     nx = 128
+    fs = 14
     UPSAMPLE = 4
     nx_exact = nx * UPSAMPLE
     unique_ids = ["exact", "vanleer", "gs0", "gs_dldtexact", "ec", "ec_dldtexact"]
     labels = [
         "MUSCL\n{}x{}".format(nx_exact, nx_exact), 
-        "MUSCL",
+        "MUSCL\n{}x{}".format(nx, nx),
         r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
         r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
         r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
@@ -127,7 +128,7 @@ def plot_data():
         axs[j, 0].set_ylabel("t = {}".format(int(t * 60)))
 
     for k in range(N):
-        axs[0,k].set_title(labels[k])
+        axs[0,k].set_title(labels[k], fontsize=fs)
 
     axs[2,-1].yaxis.set_label_position("right")
     axs[2,-1].set_ylabel("'\n ")
@@ -148,6 +149,6 @@ def plot_data():
     
 
 plot_data()
-#plt.savefig('vorticity_plots.eps')
-#plt.savefig('vorticity_plots.png')
+plt.savefig('vorticity_plots.eps')
+plt.savefig('vorticity_plots.png')
 plt.show()
