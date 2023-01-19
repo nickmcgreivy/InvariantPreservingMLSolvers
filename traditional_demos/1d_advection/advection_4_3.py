@@ -11,21 +11,29 @@ import matplotlib as mpl
 mpl.rcParams.update(mpl.rcParamsDefault)
 
 
-def forward_euler(a_n, t_n, F, dt, dl_dt=None):
-    a_1 = a_n + dt * F(a_n, t_n, dl_dt=dl_dt)
+def forward_euler(a_n, t_n, F, dt, delta_l2 = None):
+    update = dt * F(a_n, t_n)
+    if delta_l2 is not None:
+        update = update - np.mean(update)
+        G = np.roll(a_n, -1, axis=0) + np.roll(a_n, 1, axis=0) - 2 * a_n
+        coeff = np.sum((a_n + update) * G) / np.sum(G**2)
+        sqrt_arg = (np.sum(G**2)) * (2 * np.sum(a_n * update) + np.sum(update**2) - delta_l2) / ((np.sum((a_n + update) * G))**2)
+        epsilon = coeff * (-1 + np.sqrt(1 - sqrt_arg))
+        update = update + epsilon * G
+    a_1 = a_n + update
     return a_1, t_n + dt
 
 
-def ssp_rk2(a_n, t_n, F, dt, dl_dt=None):
-    a_1 = a_n + dt * F(a_n, t_n, dl_dt=dl_dt)
-    a_2 = 0.5 * a_n + 0.5 * a_1 + 0.5 * dt * F(a_1, t_n + dt, dl_dt=dl_dt)
+def ssp_rk2(a_n, t_n, F, dt, delta_l2=None):
+    a_1 = a_n + dt * F(a_n, t_n)
+    a_2 = 0.5 * a_n + 0.5 * a_1 + 0.5 * dt * F(a_1, t_n + dt)
     return a_2, t_n + dt
 
 
-def ssp_rk3(a_n, t_n, F, dt, dl_dt=None):
-    a_1 = a_n + dt * F(a_n, t_n, dl_dt=dl_dt)
-    a_2 = 0.75 * a_n + 0.25 * (a_1 + dt * F(a_1, t_n + dt, dl_dt=dl_dt))
-    a_3 = 1 / 3 * a_n + 2 / 3 * (a_2 + dt * F(a_2, dt + dt / 2, dl_dt=dl_dt))
+def ssp_rk3(a_n, t_n, F, dt, delta_l2=None):
+    a_1 = a_n + dt * F(a_n, t_n)
+    a_2 = 0.75 * a_n + 0.25 * (a_1 + dt * F(a_1, t_n + dt))
+    a_3 = 1 / 3 * a_n + 2 / 3 * (a_2 + dt * F(a_2, dt + dt / 2))
     return a_3, t_n + dt
 
 
@@ -198,13 +206,13 @@ def evalf_1D(x, a, dx, leg_poly):
 
 def _scan(sol, x, rk_F):
     a, t = sol
-    a_f, t_f = rk_F(a, t, x)
+    a_f, t_f = rk_F(a, t)
     return (a_f, t_f), None
 
 
 def _scan_output(sol, x, rk_F):
     a, t = sol
-    a_f, t_f = rk_F(a, t, x)
+    a_f, t_f = rk_F(a, t)
     return (a_f, t_f), (a, t)
 
 
@@ -212,13 +220,22 @@ def _scan_output(sol, x, rk_F):
 def _muscl_flux_1D_advection(a):
     raise NotImplementedError
 
+def _centered_flux_1D_advection(a):
+    u = np.sum(a, axis=-1)
+    return (u + np.roll(u, -1)) / 2
+
+def _upwind_flux_1D_advection(a):
+    return np.sum(a, axis=-1)
+
 
 
 def time_derivative_1D_advection(
-    a, t, nx, dx, flux, dl_dt = None,
+    a, t, nx, dx, flux
 ):
-    if flux == "MUSCL":
-        flux_right = _muscl_flux_1D_burgers(a)
+    if flux == "centered":
+        flux_right = _centered_flux_1D_advection(a)
+    elif flux == "upwind":
+        flux_right = _upwind_flux_1D_advection(a)
     else:
         raise Exception
 
@@ -235,28 +252,27 @@ def simulate_1D(
     nt,
     output=False,
     rk=ssp_rk3,
+    delta_l2 = None,
     flux="centered",
-    dl_dt = None,
 ):
 
-    dadt = lambda a, t, dl_dt: time_derivative_1D_advection(
+    dadt = lambda a, t: time_derivative_1D_advection(
         a,
         t,
         nx,
         dx,
         flux,
-        dl_dt = dl_dt,
     )
 
-    rk_F = lambda a, t, dl_dt: rk(a, t, dadt, dt, dl_dt=dl_dt)
+    rk_F = lambda a, t: rk(a, t, dadt, dt, delta_l2=delta_l2)
 
     if output:
         scanf = jit(lambda sol, x: _scan_output(sol, x, rk_F))
-        _, data = scan(scanf, (a0, t0), dl_dt, length=nt)
+        _, data = scan(scanf, (a0, t0), None, length=nt)
         return data
     else:
         scanf = jit(lambda sol, x: _scan(sol, x, rk_F))
-        (a_f, t_f), _ = scan(scanf, (a0, t0), dl_dt, length=nt)
+        (a_f, t_f), _ = scan(scanf, (a0, t0), None, length=nt)
         return (a_f, t_f)
 
 
@@ -323,60 +339,48 @@ vmap_l2_norm = vmap(l2_norm)
 
 
 nx = 20
-Np = 4
-T = 0.5
+Np = 3
+T = 1.0
 L = 1.0
 t0 = 0.0
+fs = 14
 f_init = lambda x, t: np.sin(2 * np.pi * x)
-cfl_safety = 0.1
+f_exact = lambda x, t: np.sin(2 * np.pi * (x - t))
+cfl_safety = 0.5
 
 dx = L/nx
 dt = cfl_safety * dx
 nt = T // dt + 1
 a0 = map_f_to_FV(f_init, t0, nx, dx)
 
-##########
-# Calculate dl/dt
-##########
+UPSAMPLE = 20
 
-
-##### exact 
-
-UPSAMPLE = 25
 nx_exact = nx * UPSAMPLE
 dx_exact = L / nx_exact
-dt_exact = cfl_safety * dx_exact
-a0_exact = map_f_to_FV(f_init, t0, nx_exact, dx_exact)
-nt_exact = T // dt_exact + 2
 
-a_data, t_data = simulate_1D(a0_exact, t0, nx_exact, dx_exact, dt_exact, nt_exact, output=True, flux="godunov")
-dl_dt_exact = (vmap_l2_norm(a_data[1:]) - vmap_l2_norm(a_data[:-1])) / dt_exact
-
-dl_dt_upsample = np.mean(dl_dt_exact.reshape(-1, UPSAMPLE), axis=-1)
-a_godunov = a_data[:-1][::UPSAMPLE]
-t_godunov = t_data[:-1][::UPSAMPLE]
 
 
 #### fluxes
 
-a_centered, _ = simulate_1D(a0, t0, nx, dx, dt, nt, flux="centered", output="True")
-a_stabilized, _ = simulate_1D(a0, t0, nx, dx, dt, nt, flux="stabilized", output="True")
-a_stabilized2, _ = simulate_1D(a0, t0, nx, dx, dt, nt, flux="stabilized2", output="True", dl_dt = dl_dt_upsample)
+a_centered, t_centered = simulate_1D(a0, t0, nx, dx, dt, nt, flux="centered", output="True", rk = forward_euler)
+a_update, _ = simulate_1D(a0, t0, nx, dx, dt, nt, flux="centered", output="True", rk = forward_euler, delta_l2=0.0)
 
-
-js = [0, 33, 66, 99]
+num = a_centered.shape[0]
+js = [0, int(num * 0.5), -1]
+assert Np == len(js)
 
 a_centered_list = []
-a_stabilized_list = []
-a_stabilized2_list = []
-a_godunov_list = []
+a_update_list = []
+a_exact_list = []
 
 
 for j in js:
-    a_godunov_list.append(a_godunov[j])
     a_centered_list.append(a_centered[j])
-    a_stabilized_list.append(a_stabilized[j])
-    a_stabilized2_list.append(a_stabilized2[j])
+    a_update_list.append(a_update[j])
+    a_exact_j = map_f_to_FV(f_exact, t_centered[j], nx_exact, dx_exact)
+    a_exact_list.append(a_exact_j)
+
+
 
 
 
@@ -384,11 +388,10 @@ for j in js:
 fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8,3))
 
 for j in range(Np):
-    plot_subfig_oscillations(a_godunov_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2)
-    plot_subfig_oscillations(a_centered_list[j], axs[j], L, color="#ff5555", label="Centered flux\n(unstable)", linewidth=1.5)
-    plot_subfig_oscillations(a_stabilized_list[j], axs[j], L, color="#003366", label='$\ell_2$-norm conserving\ncentered flux', linewidth=1.5)
-    plot_subfig(a_stabilized2_list[j], axs[j], L, color="#007733", label='$\ell_2$-norm decaying\ncentered flux', linewidth=1.5)
-    axs[j].plot(np.zeros(len(a_stabilized)), '--',  color="black", linewidth=0.4)
+    plot_subfig_oscillations(a_exact_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2)
+    plot_subfig_oscillations(a_centered_list[j], axs[j], L, color="#ff5555", label="FTCS\n(unstable)", linewidth=1.5)
+    plot_subfig_oscillations(a_update_list[j], axs[j], L, color="#5555ff", label="Modified FTCS\n(stable)", linewidth=1.5)
+
 
 axs[0].set_xlim([0, 1])
 axs[0].set_ylim([-2.0, 2.0])
@@ -409,34 +412,34 @@ for j in range(Np):
 #    axs[j].grid(True, which="both")
 
 
+
 plt.style.use('seaborn')
 
 props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-#axs[0].text(0.4, 0.95, r'$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} \big(\frac{u^2}{2}\big) = 0$', transform=axs[0].transAxes, fontsize=10, verticalalignment='top', bbox=props)
-axs[1].text(0.15, 0.15, r'$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} (\frac{u^2}{2}) = 0$', transform=axs[1].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+axs[1].text(0.5, 0.15, r'$\frac{\partial u}{\partial t} + \frac{\partial u}{\partial x} = 0$', transform=axs[1].transAxes, fontsize=fs, verticalalignment='top', bbox=props)
 
 # place a text box in upper left in axes coords
-axs[0].text(0.02, 0.95, "$t=0.0$", transform=axs[0].transAxes, fontsize=13,
+axs[0].text(0.02, 0.97, "$t=0.0$", transform=axs[0].transAxes, fontsize=fs,
         verticalalignment='top')
-axs[1].text(0.02, 0.95, "$t=0.167$", transform=axs[1].transAxes, fontsize=13,
+axs[1].text(0.02, 0.97, "$t=0.5$", transform=axs[1].transAxes, fontsize=fs,
         verticalalignment='top')
-axs[2].text(0.02, 0.95, "$t=0.333$", transform=axs[2].transAxes, fontsize=13,
-        verticalalignment='top')
-axs[3].text(0.02, 0.95, "$t=0.5$", transform=axs[3].transAxes, fontsize=13,
+axs[2].text(0.02, 0.97, "$t=1.0$", transform=axs[2].transAxes, fontsize=fs,
         verticalalignment='top')
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(),loc=(0.003,0.002), prop={'size': 10})
+fig.legend(by_label.values(), by_label.keys(),loc=(0.003,0.002), prop={'size': fs})
 
 #fig.suptitle("")
+
+
 
 fig.tight_layout()
 fig.subplots_adjust(wspace=0, hspace=0)
 
 
-#plt.savefig("advection_demo.eps")
-#plt.savefig("advection_demo.png")
+plt.savefig("advection_demo.eps")
+plt.savefig("advection_demo.png")
 
 plt.show()
 
