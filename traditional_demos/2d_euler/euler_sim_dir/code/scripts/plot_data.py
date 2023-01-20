@@ -55,17 +55,17 @@ def average_half(zeta):
 
 def plot_data():
     nx = 128
-    fs = 14
+    fs = 16
     UPSAMPLE = 4
     nx_exact = nx * UPSAMPLE
     unique_ids = ["exact", "vanleer", "gs0", "gs_dldtexact", "ec", "ec_dldtexact"]
     labels = [
         "MUSCL\n{}x{}".format(nx_exact, nx_exact), 
         "MUSCL\n{}x{}".format(nx, nx),
-        r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
-        r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
-        r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
-        r"EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$", # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+        "$\ell_2$-conserving", #r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
+        '$\ell_2$-decaying\n(exact)', #r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+        '$\ell_2$-decaying\nEC (same)', #r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
+        '$\ell_2$-decaying\nEC (exact)',#r"EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$", # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
     ]
     
     N = len(unique_ids)
@@ -125,7 +125,7 @@ def plot_data():
             f.close()
 
     for j, t in enumerate(ts):
-        axs[j, 0].set_ylabel("t = {}".format(int(t * 60)))
+        axs[j, 0].set_ylabel("t = {}".format(int(t * 60)),fontsize=fs)
 
     for k in range(N):
         axs[0,k].set_title(labels[k], fontsize=fs)
@@ -145,7 +145,7 @@ def plot_data():
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.01, hspace=0.01)
     cbar_ax = fig.add_axes([0.943, 0.06, 0.03, 0.8])
-    fig.colorbar(im, cax=cbar_ax,ticks=[vmin, 0, vmax])
+    fig.colorbar(im, cax=cbar_ax, ticks=[vmin, 0, vmax])
     
 
 plot_data()

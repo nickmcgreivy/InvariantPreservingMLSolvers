@@ -38,12 +38,12 @@ UPSAMPLE = 4
 nx_exact = nx * UPSAMPLE
 unique_ids = ["exact", "vanleer", "gs0", "gs_dldtexact", "ec", "ec_dldtexact"]
 labels = [
-"MUSCL\n{}x{}".format(nx_exact, nx_exact), 
-"MUSCL",
-r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
-r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
-r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
-r"EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$", # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+    "MUSCL\n{}x{}".format(nx_exact, nx_exact), 
+    "MUSCL\n{}x{}".format(nx, nx),
+    "$\ell_2$-conserving", #r'$\frac{d\ell_{2}^{new}}{dt} = 0$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = 0
+    '$\ell_2$-decaying\n(exact)', #r'$\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
+    '$\ell_2$-decaying\nEC (same)', #r'EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{old}}{dt}$', #\n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{old}}}{dt}
+    '$\ell_2$-decaying\nEC (exact)',#r"EC $\frac{d\ell_{2}^{new}}{dt} = \frac{d\ell_{2}^{exact}}{dt}$", # \n\frac{d\ell_2^{\textnormal{new}}}{dt} = \frac{d\ell_2^{\textnormal{exact}}}{dt}
 ]
 nxs = [nx_exact, nx, nx, nx, nx, nx]
 N = len(unique_ids)
@@ -112,7 +112,7 @@ for k in range(N):
 
 
 axs[0].set_xlim([0.0,61.0])
-axs[0].set_ylim([0.95,1.35])
+axs[0].set_ylim([0.825,1.35])
 axs[1].set_ylim([-0.01,0.375])
 
 axs[0].grid(visible=False)
@@ -149,16 +149,16 @@ axs[1].set_xticklabels([])
 axs[0].set_xticklabels([])
 
 axs[0].set_yticks([1.0, 1.25])
-axs[0].set_yticklabels([r'1.0', r'1.25'], usetex=usetex, fontsize=11)
+axs[0].set_yticklabels([r'1.0', r'1.25'], usetex=usetex, fontsize=14)
 axs[1].set_yticks([0.25, 0.0])
-axs[1].set_yticklabels([r'0.25',r'0'], usetex=usetex, fontsize=11)
+axs[1].set_yticklabels([r'0.25',r'0'], usetex=usetex, fontsize=14)
 
 
 axs[2].set_ylim([0.00,1.02])
 axs[2].set_xticks([0,30,60.0])
 axs[2].set_yticks([0.0,0.5,1.0])
-axs[2].set_yticklabels([r'0', r'0.5', r'1.0'], usetex=usetex, fontsize=11)
-axs[2].set_xticklabels([r'$t=0$',r'$t=30$',r'$t=60$'], usetex=usetex, fontsize=11)
+axs[2].set_yticklabels([r'0', r'0.5', r'1.0'], usetex=usetex, fontsize=14)
+axs[2].set_xticklabels([r'$t=0$',r'$t=30$',r'$t=60$'], usetex=usetex, fontsize=14)
 for i, tick in enumerate(axs[2].xaxis.get_majorticklabels()):
     if i == 0:
         tick.set_horizontalalignment("left")
@@ -176,15 +176,15 @@ axs[2].spines['right'].set_visible(False)
 axs[0].yaxis.set_label_position("right")
 axs[1].yaxis.set_label_position("right")
 axs[2].yaxis.set_label_position("right")
-axs[2].set_ylabel('Vorticity correlation', usetex=usetex, fontsize=16)
-axs[1].set_ylabel("Enstrophy", usetex=usetex, fontsize=16)
-axs[0].set_ylabel("Energy", usetex=usetex, fontsize=16)
+axs[2].set_ylabel('Vorticity correlation', usetex=usetex, fontsize=18)
+axs[1].set_ylabel("Enstrophy", usetex=usetex, fontsize=18)
+axs[0].set_ylabel("Energy", usetex=usetex, fontsize=18)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
 vals = list(by_label.values())
 keys = list(by_label.keys())
-fig.legend(vals, keys,loc=(0.13,0.595), prop={'size': 13}, ncol=2)
+fig.legend(vals, keys,loc=(0.11,0.595), prop={'size': 14}, ncol=2)
 #fig.legend(vals[0:2], keys[0:2],loc=(0.13,0.65), prop={'size': 11}, ncol=2)
 #fig.legend(vals[2:4], keys[2:4],loc=(0.13,0.55), prop={'size': 11}, ncol=2)
 #fig.legend(vals[4:], keys[4:],  loc=(0.13,0.35), prop={'size': 11}, ncol=2)
