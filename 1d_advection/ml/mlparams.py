@@ -12,17 +12,9 @@ class TrainingParams:
 	def __post_init__(self):
 		self.num_training_iterations = (self.n_data // self.batch_size) * self.num_epochs
 
-class TrainingParamsUnroll(TrainingParams):
-
-	def __init__(self, n_unroll, *args):
-		super().__init__(*args)
-		self.n_unroll = n_unroll
-	
-
 @dataclass
-class StencilParams:
+class ModelParams:
 	kernel_size: int
 	kernel_out: int
-	stencil_width: int
 	depth: int
 	width: int

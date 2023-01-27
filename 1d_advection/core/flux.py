@@ -9,7 +9,9 @@ class Flux(Enum):
     UPWIND = "upwind"
     CENTERED = "centered"
     MUSCL = "muscl"
+    LEARNED = "learned"
     LEARNEDLIMITER = "learnedlimiter"
+    COMBINATION_LEARNED = "combination_learned"
 
     def __str__(self):
         return self.value

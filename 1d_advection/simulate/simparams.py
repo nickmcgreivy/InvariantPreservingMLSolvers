@@ -10,14 +10,6 @@ class CoreParams:
 
 	def __post_init__(self):
 		self.flux = Flux(self.fluxstr)
-		self.order = None
-
-
-class CoreParamsDG(CoreParams):
-
-	def __init__(self, Lx, flux, order):
-		super().__init__(Lx, flux)
-		self.order = order
 
 
 @dataclass

@@ -1,10 +1,39 @@
 import jax.numpy as jnp
 from jax import vmap, jit
-from functools import partial 
-
-from legendre import generate_legendre
+from functools import partial, lru_cache
+import numpy as onp
+from scipy.special import comb
 
 vmap_polyval = vmap(jnp.polyval, (0, None), -1)
+
+
+@lru_cache(maxsize=10)
+def generate_legendre(p):
+    """
+    Returns a (p, p) array which represents
+    p length-p polynomials. legendre_poly[k] gives
+    an array which represents the kth Legendre
+    polynomial. The polynomials are represented
+    from highest degree of x (x^{p-1}) to lowest degree (x^0),
+    as is standard in numpy poly1d.
+    Inputs
+    p: the number of Legendre polynomials
+    Outputs
+    poly: (p, p) array representing the Legendre polynomials
+    """
+    assert p >= 1
+    poly = onp.zeros((p, p))
+    poly[0, -1] = 1.0
+    twodpoly = onp.asarray([0.5, -0.5])
+    for n in range(1, p):
+        for k in range(n + 1):
+            temp = onp.asarray([1.0])
+            for j in range(k):
+                temp = onp.polymul(temp, twodpoly)
+            temp *= comb(n, k) * comb(n + k, k)
+            poly[n] = onp.polyadd(poly[n], temp)
+
+    return poly
 
 
 def _quad_two_per_interval(f, a, b, n=5):
@@ -189,10 +218,8 @@ def evalf_1D(x, a, dx, leg_poly):
 	f: 1d array of points, equal to sum over p polynomials
 	"""
 	j = jnp.floor(x / dx).astype(int)
-	# print("j is {}".format(j))
 	x_j = dx * (0.5 + j)
 	xi = (x - x_j) / (0.5 * dx)
-	# print("xi is {}".format(xi))
 	poly_eval = vmap_polyval(leg_poly, xi)  # nx, p array
 	return jnp.sum(poly_eval * a[j, :], axis=-1)
 
@@ -237,7 +264,7 @@ def integrate_abs_derivative(a):
 	return jnp.sum(vmap(integrate_abs_deriv_single, (0, None), 0)(a, poly_eval))
 
 
-def map_f_to_DG(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
+def map_f_to_DG(f, t, p, nx, dx, quad_func=_fixed_quad, n=5):
 	"""
 	Takes a function f of type lambda x, t: f(x,t) and
 	generates the DG representation of the solution, an
@@ -257,11 +284,14 @@ def map_f_to_DG(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
 	return (
 		twokplusone[None, :]
 		/ dx
-		* inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=quad_func, n=n)
+		* inner_prod_with_legendre(f, t, p, nx, dx, quad_func=quad_func, n=n)
 	)
 
+def map_f_to_FV(f, t, nx, dx, quad_func=_fixed_quad, n=5):
+	return map_f_to_DG(f, t, 1, nx, dx, quad_func=quad_func, n=n)[...,0]
 
-def inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
+
+def inner_prod_with_legendre(f, t, p, nx, dx, quad_func=_fixed_quad, n=5):
 	"""
 	Takes a function f of type lambda x, t: f(x,t) and
 	takes the inner product of the solution with p
@@ -276,6 +306,8 @@ def inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n
 	Outputs
 	integral: The inner product representation of f(x, t) at t=t
 	"""
+
+	leg_poly = generate_legendre(p)
 
 	_vmap_fixed_quad = vmap(
 		lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0
@@ -322,7 +354,6 @@ def convert_DG_representation(a, p_new, nx_new, Lx):
 	if p_new == p_old and nx_new == nx_old:
 		return a
 	leg_poly_old = generate_legendre(p_old)
-	leg_poly_new = generate_legendre(p_new)
 
 	dx_new = Lx / nx_new
 	dx_old = Lx / nx_old
@@ -342,7 +373,6 @@ def convert_DG_representation(a, p_new, nx_new, Lx):
 			p_new,
 			nx_new,
 			dx_new,
-			leg_poly_new,
 			quad_func=_quad_two_per_interval,
 			n=8,
 		)
