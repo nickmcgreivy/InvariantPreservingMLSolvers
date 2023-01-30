@@ -390,6 +390,10 @@ def convert_DG_representation(a, p_new, nx_new, Lx):
 def convert_FV_representation(a, nx_new, Lx):
 	"""
 	Converts one FV representation to another. Starts by writing a function
-	which does the mapping for a single timestep, then vmaps for many timesteps.
+	which does the mapping for a single grid cell, then vmaps for many grid cells.
 	"""
+	nx_old = a.shape[0]
+	if nx_old >= nx_new and nx_old % nx_new == 0:
+		return jnp.mean(a.reshape(-1, nx_old // nx_new), axis=-1)
+
 	return convert_DG_representation(a[...,None], 1, nx_new, Lx)[...,0]

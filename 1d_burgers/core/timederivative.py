@@ -163,10 +163,13 @@ def _weno_flux_bad_FV_1D_burgers(a):
 	)
 
 
+def _centered_flux_1D_burgers(a):
+    u_left = a
+    u_right = jnp.roll(a, -1)
+    return ((u_left + u_right) / 2) ** 2 / 2
 
 
-
-def _flux_term_FV_1D_burgers(a, core_params, global_stabilization=False, G = lambda f, u: jnp.roll(u, -1) - u, epsilon_gs=0.0, model=None, params=None, delta=True):
+def _flux_term_FV_1D_burgers(a, core_params, global_stabilization=False, G = lambda f, u: jnp.roll(u, -1) - u, epsilon_gs=0.0, model=None, params=None, delta=False):
 	if core_params.flux == Flux.GODUNOV:
 		flux_right = _godunov_flux_FV_1D_burgers(a)
 	elif core_params.flux == Flux.WENO:
@@ -175,6 +178,8 @@ def _flux_term_FV_1D_burgers(a, core_params, global_stabilization=False, G = lam
 		flux_right = _weno_flux_bad_FV_1D_burgers(a)
 	elif core_params.flux == Flux.GODUNOVBAD:
 		flux_right = _godunov_convective_flux_bad(a)
+	elif core_params.flux == Flux.CENTERED:
+		flux_right = _centered_flux_1D_burgers(a)
 	else:
 		raise NotImplementedError
 
@@ -189,7 +194,7 @@ def _flux_term_FV_1D_burgers(a, core_params, global_stabilization=False, G = lam
 		flux_right = _global_stabilization(flux_right, a, epsilon_gs=epsilon_gs, G = G)
 
 
-	flux_left = jnp.roll(flux_right, 1, axis=0)
+	flux_left = jnp.roll(flux_right, 1)
 	return flux_left - flux_right
 
 def _diffusion_term_FV(a, dx):
@@ -202,6 +207,25 @@ def time_derivative_FV_1D_burgers(core_params, **kwargs):
 		nx = a.shape[0]
 		dx = core_params.Lx / nx
 		flux_term = _flux_term_FV_1D_burgers(a, core_params, **kwargs)
+		if forcing_func is not None:
+			forcing_term = integrate_f(forcing_func, t, nx, dx, n = 1)
+		else:
+			forcing_term = 0.0
+
+		if core_params.nu > 0.0:
+			diffusion_term = core_params.nu * _diffusion_term_FV(a, dx)
+		else:
+			diffusion_term = 0.0
+		return (flux_term + forcing_term + diffusion_term) / dx
+
+	return dadt
+
+def time_derivative_FV_1D_burgers_train(core_params, model=None, delta=False):
+
+	def dadt(a, t, params = None, forcing_func = None):
+		nx = a.shape[0]
+		dx = core_params.Lx / nx
+		flux_term = _flux_term_FV_1D_burgers(a, core_params, model=model, params=params, delta=delta)
 		if forcing_func is not None:
 			forcing_term = integrate_f(forcing_func, t, nx, dx, n = 1)
 		else:

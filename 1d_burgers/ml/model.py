@@ -85,8 +85,8 @@ class LearnedStencil(nn.Module):
 	features: Sequence[int]
 	kernel_size: int = 5
 	kernel_out: int = 4
-	stencil_width: int = 4  # S
-	delta: bool = True
+	stencil_width: int = 6  # S
+	delta: bool = False
 
 	def setup(self):
 		assert self.stencil_width % 2 == 0 and self.stencil_width > 0

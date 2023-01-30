@@ -14,6 +14,7 @@ from initialconditions import get_initial_condition_fn, get_a0
 from model import stencil_delta_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers
 from lossfunctions import mse_loss_FV
 from simulations import BurgersFVSim
+from timederivative import time_derivative_FV_1D_burgers_train
 
 def create_training_data(sim_params, core_params, nxs, N, delta=True):
 	for nx in nxs:
@@ -26,24 +27,13 @@ def create_training_data(sim_params, core_params, nxs, N, delta=True):
 		else:
 			word = "dadt"
 		f.create_dataset("a", (N, nx), dtype="float64")
+		f.create_dataset("t", (N,), dtype="float64")
+		f.create_dataset("key", (N, 2), dtype="uint32")
 		f.create_dataset(word, (N, nx), dtype="float64")
 		f.close()
 
 
-def create_training_data_unroll(sim_params, core_params, nxs, N, n_unroll):
-	for nx in nxs:
-		f = h5py.File(
-			"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
-			"w",
-		)
-		f.create_dataset("a0", (N, nx), dtype="float64")
-		f.create_dataset("t0", (N), dtype="float64")
-		f.create_dataset("a_unroll", (N, n_unroll, nx), dtype="float64")
-		f.close()
-
-
-
-def write_trajectory(sim_params, core_params, nx, trajectory, dadt_trajectory, n, outer_steps, delta=True):
+def write_trajectory(sim_params, core_params, nx, a_trajectory, t_trajectory, dadt_trajectory, forcing_key, n, outer_steps, delta=True):
 	f = h5py.File(
 		"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
 		"r+",
@@ -54,21 +44,10 @@ def write_trajectory(sim_params, core_params, nx, trajectory, dadt_trajectory, n
 		word = "delta_dadt"
 	else:
 		word = "dadt"
-	f["a"][j_begin:j_end] = trajectory
+	f["a"][j_begin:j_end] = a_trajectory
+	f["t"][j_begin:j_end] = t_trajectory
+	f["key"][j_begin:j_end] = forcing_key[None]
 	f[word][j_begin:j_end] = dadt_trajectory
-	f.close()
-
-
-def write_trajectory_unroll(sim_params, core_params, nx, trajectory, trajectory_t, trajectory_unroll, n, outer_steps):
-	f = h5py.File(
-		"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
-		"r+",
-	)
-	j_begin = n * outer_steps
-	j_end = (n+1) * outer_steps
-	f["a0"][j_begin:j_end] = trajectory
-	f["t0"][j_begin:j_end] = trajectory_t
-	f["a_unroll"][j_begin:j_end] = trajectory_unroll
 	f.close()
 
 
@@ -90,7 +69,7 @@ def save_training_data(key, init_fn, forcing_fn, core_params, sim_params, sim, t
 
 		step_fn = lambda a, t, dt: sim.step_fn(a, t, dt, forcing_func = f_forcing)
 		inner_fn = get_inner_fn(step_fn, sim.dt_fn, t_inner)
-		rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps, start_with_input=False))
+		rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps, start_with_input=True))
 
 		# get exact trajectory
 		trajectory, trajectory_t = rollout_fn(x0)
@@ -112,46 +91,8 @@ def save_training_data(key, init_fn, forcing_fn, core_params, sim_params, sim, t
 			else:
 				dadt_to_store = dadt_trajectory_exact_ds
 
-			write_trajectory(sim_params, core_params, nx, trajectory_ds, dadt_to_store, n, outer_steps, delta=delta)
+			write_trajectory(sim_params, core_params, nx, trajectory_ds, trajectory_t, dadt_to_store, forcing_key, n, outer_steps, delta=delta)
 
-
-def save_training_data_unroll(key, init_fn, forcing_fn, core_params, sim_params, sim, t_inner, outer_steps, n_runs, nx_exact, nxs, n_unroll, dts, **kwargs):
-	
-
-	# initialize files for saving training data
-	create_training_data_unroll(sim_params, core_params, nxs, outer_steps * n_runs, n_unroll)
-
-	for n in range(n_runs):
-		print(n)
-		key, initkey, forcing_key = jax.random.split(key, 3)
-		# init solution
-		f_init = init_fn(initkey)
-		f_forcing = forcing_fn(forcing_key)
-		a0 = get_a0(f_init, core_params, nx_exact)
-		t0 = 0.0
-		x0 = (a0, t0)
-
-		step_fn = lambda a, t, dt: sim.step_fn(a, t, dt, forcing_func = f_forcing)
-		inner_fn = get_inner_fn(step_fn, sim.dt_fn, t_inner)
-		rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
-		# get exact trajectory
-		trajectory, trajectory_t = rollout_fn(x0, forcing_func=f_forcing)
-
-		# for each a in trajectory, simulate with timestep dt(nx) for n_unroll steps
-		for j, nx in enumerate(nxs):
-			convert_fn = jax.jit(jax.vmap(lambda a: convert_FV_representation(a, nx, core_params.Lx)))
-
-			dt = dts[j]
-			inner_fn_dt = get_inner_fn(step_fn, sim.dt_fn, dt) # instead of advancing by t_inner, advance by dt = dts[i] 
-			trajectory_fn_unroll = get_trajectory_fn(inner_fn_dt, n_unroll, start_with_input=False)
-			unroll_fn = jax.vmap(lambda x0: trajectory_fn_unroll(x0, forcing_func=f_forcing))
-			x0s = (trajectory, trajectory_t)
-			trajectory_unroll, trajectory_unroll_t = unroll_fn(x0s)
-
-			trajectory_ds = convert_fn(trajectory)
-			trajectory_unroll_ds = jax.vmap(convert_fn)(trajectory_unroll)
-
-			write_trajectory_unroll(sim_params, core_params, nx, trajectory_ds, trajectory_t, trajectory_unroll_ds, n, outer_steps)
 
 
 def save_training_params(nx, sim_params, training_params, params, losses):
@@ -202,7 +143,7 @@ def create_train_state(model, params, training_params):
 
 
 
-def get_batch_fn(core_params, sim_params, training_params, nx, delta=True):
+def get_batch_fn(sim_params, training_params, nx, delta=True):
 	f = h5py.File(
 		"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
 		"r",
@@ -212,34 +153,19 @@ def get_batch_fn(core_params, sim_params, training_params, nx, delta=True):
 	else:
 		word = "dadt"
 
-	trajectory = device_put(jnp.asarray(f["a"][:training_params.n_data]), jax.devices()[0])
+	trajectory_a = device_put(jnp.asarray(f["a"][:training_params.n_data]), jax.devices()[0])
+	trajectory_t = device_put(jnp.asarray(f["t"][:training_params.n_data]), jax.devices()[0])
+	trajectory_key = device_put(jnp.asarray(f["key"][:training_params.n_data]), jax.devices()[0])
 	dadt = device_put(jnp.asarray(f[word][:training_params.n_data]), jax.devices()[0])
 	f.close()
 
 	def batch_fn(idxs):
-		return {"a": trajectory[idxs], word: dadt[idxs]}
+		return {"a": trajectory_a[idxs], "t": trajectory_t[idxs], "key": trajectory_key[idxs], word: dadt[idxs]}
 
 	return batch_fn
 
 
-def get_batch_fn_unroll(core_params, sim_params, training_params, nx):
-	f = h5py.File(
-		"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
-		"r",
-	)
-	
-	a0 = device_put(jnp.asarray(f["a0"][:training_params.n_data]), jax.devices()[0])
-	t0 = device_put(jnp.asarray(f["t0"][:training_params.n_data]), jax.devices()[0])
-	a_unroll = device_put(jnp.asarray(f["a_unroll"][:training_params.n_data]), jax.devices()[0])
-	f.close()
-
-	def batch_fn(idxs):
-		return {"a0": a0[idxs], "t0": t0[idxs], "a_unroll": a_unroll[idxs]}
-
-	return batch_fn
-
-
-def get_loss_fn(model, core_params, delta=True):
+def get_loss_fn(model, core_params, forcing_fn, delta=True):
 	if delta:
 		def delta_dadt_fn(a, params):
 			nx = a.shape[0]
@@ -256,47 +182,20 @@ def get_loss_fn(model, core_params, delta=True):
 			return mse_loss_FV(delta_dadt, batch["delta_dadt"])
 		
 	else:
-		def dadt_fn(a, params):
-			nx = a.shape[0]
-			dx = core_params.Lx / nx
-			flux_R = stencil_flux_FV_1D_burgers(a, model, params)
-			flux_L = jnp.roll(flux_R, 1, axis=0)
-			return (flux_L - flux_R) / dx
+		
+		f_dadt = time_derivative_FV_1D_burgers_train(core_params, model=model, delta=delta)
+			
+		def dadt_fn(a, t, forcing_key, params):
+			f_forcing = forcing_fn(forcing_key)
+			return f_dadt(a, t, params=params, forcing_func =f_forcing)
 
-		batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, None), out_axes=0)
+		batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, 0, 0, None), out_axes=0)
 
 		@jax.jit
 		def loss_fn(params, batch):
-			dadt = batch_dadt_fn(batch["a"], params)
-			return mse_loss_FV(dadt, batch["dadt"])
-			
+			dadt = batch_dadt_fn(batch["a"], batch["t"], batch["key"], params)
+			return mse_loss_FV(dadt, batch["dadt"])	
 
-	return loss_fn
-
-
-
-def get_loss_fn_unroll(model, core_params, sim_params, n_unroll, delta=True):
-
-	raise NotImplementedError
-
-	def unroll_fn(a0, t0, params, dt, forcing_func=None):
-		nx = a0.shape[0]
-		dx = core_params.Lx / nx
-		sim = BurgersFVSim(core_params, sim_params, model=model, params=params, delta=delta)
-    
-		inner_fn_dt = lambda a, t: sim.step_fn(a, t, dt, forcing_func=forcing_func) # instead of advancing by t_inner, advance by dt = dts[i]  
-		unroll_fn = get_trajectory_fn(inner_fn_dt, n_unroll, start_with_input=False)
-		trajectory_unroll = unroll_fn(a0, t0)
-		return trajectory_unroll
-
-
-	batch_unroll_fn = jax.vmap(unroll_fn, in_axes=(0, 0, None, None), out_axes=0)
-
-	@jax.jit
-	def loss_fn(params, batch, dt = None):
-		a_unroll = batch_unroll_fn(batch["a0"], batch["t0"], params, dt)
-		return mse_loss_FV(a_unroll, batch["a_unroll"])
-		
 	return loss_fn
 
 

@@ -10,6 +10,7 @@ class Flux(Enum):
     WENO = "weno"
     WENOBAD = "wenobad"
     GODUNOVBAD = "godunovbad"
+    CENTERED = "centered"
 
     def __str__(self):
         return self.value
