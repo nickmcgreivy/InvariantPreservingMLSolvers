@@ -187,7 +187,7 @@ def get_loss_fn(model, core_params, forcing_fn, delta=True):
 			
 		def dadt_fn(a, t, forcing_key, params):
 			f_forcing = forcing_fn(forcing_key)
-			return f_dadt(a, t, params=params, forcing_func =f_forcing)
+			return f_dadt(a, t, params=params, forcing_func = f_forcing)
 
 		batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, 0, 0, None), out_axes=0)
 

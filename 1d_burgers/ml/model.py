@@ -168,3 +168,89 @@ class CNNPeriodic1D(nn.Module):
 		)
 		x = self.output(x)
 		return x
+
+
+
+######
+# Diffusion
+######
+
+
+def stencil_flux_FV_1D_burgers_diffusion(a, core_params, model, params):
+	nx = a.shape[0]
+	dx = core_params.Lx / nx
+
+	s, s_diff = model.apply(params, a)  # (nx, S, 2)
+
+	a_pad = jnp.pad(
+		a,
+		(((model.stencil_width - 1) // 2, (model.stencil_width - 1) // 2 + 1)),
+		"wrap",
+	)
+	P = jax.lax.conv_general_dilated_patches(
+		a_pad[None, ..., None],
+		iter([model.stencil_width]),
+		iter([1]),
+		"VALID",
+		dimension_numbers=("CWN", "OIW", "WCN"),
+	)[...,0]
+	u_reconstruct = jnp.sum(P * s, axis=1)
+	du_dx_reconstruct = jnp.sum(P * (s_diff / dx), axis=1)
+
+	return f_burgers(u_reconstruct) - core_params.nu * du_dx_reconstruct
+
+
+def create_M(s):
+	ones = jnp.ones(s)
+	two = jnp.linspace(-(s-1)/2, (s-1)/2, s)
+	M = jnp.asarray((ones, two))
+	return M
+
+def project_to_null_space(P, x):
+	# x is (nx, s). Want, for each of nx indices,
+	# to project x onto L2-minimizing vector in null space of matrix
+	# [ [       1,         ...,         1        ]
+	#   [-(s-1)/2, ..., -1/2, 1/2, ..., (s-1)/2] ]
+	return x - P @ x
+
+vmap_project_to_null_space = jax.vmap(project_to_null_space, (None, 0))
+
+class LearnedStencilDiffusion(nn.Module):
+	features: Sequence[int]
+	kernel_size: int = 5
+	kernel_out: int = 4
+	stencil_width: int = 6  # S
+	delta: bool = False
+
+	def setup(self):
+		assert self.stencil_width % 2 == 0 and self.stencil_width > 0
+		self.conv = CNNPeriodic1D(
+			self.features,
+			kernel_size=self.kernel_size,
+			kernel_out=self.kernel_out,
+			N_out=self.stencil_width * 2,
+		)
+		self.base_stencil = jnp.zeros(self.stencil_width).at[self.stencil_width//2].set(0.5).at[self.stencil_width//2-1].set(0.5)
+		
+		self.base_stencil_diff = jnp.zeros(self.stencil_width).at[self.stencil_width//2].set(1.0).at[self.stencil_width//2-1].set(-1.0)
+		
+		self.M = create_M(self.stencil_width)
+		self.P = self.M.T @ jnp.linalg.inv(self.M @ self.M.T) @ self.M
+
+
+	def __call__(self, inputs):
+		output = self.conv(inputs).reshape(inputs.shape[0], -1, 2) # (nx, s)
+
+		x  = output[..., 0]
+		xd = output[..., 1]
+
+		x = x - jnp.mean(x, axis=-1)[:, None]
+		if self.delta == False:
+			x = x + self.base_stencil[None, :]
+
+		xd = vmap_project_to_null_space(self.P, xd)
+		if self.delta == True:
+			raise NotImplementedError
+		else:
+			xd = xd + self.base_stencil_diff[None, :]
+		return x, xd

@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 
 from flux import Flux
-from model import stencil_delta_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers
+from model import stencil_delta_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers_diffusion
 from helper import integrate_f
 
 def minmod_3(z1, z2, z3):
@@ -180,15 +180,19 @@ def _flux_term_FV_1D_burgers(a, core_params, global_stabilization=False, G = lam
 		flux_right = _godunov_convective_flux_bad(a)
 	elif core_params.flux == Flux.CENTERED:
 		flux_right = _centered_flux_1D_burgers(a)
-	else:
-		raise NotImplementedError
-
-	if params is not None:
+	elif core_params.flux == Flux.LEARNED:
 		if delta:
 			delta_flux = stencil_delta_flux_FV_1D_burgers(a, model, params)
 			flux_right = flux_right + delta_flux
 		else:
 			flux_right = stencil_flux_FV_1D_burgers(a, model, params)
+	elif core_params.flux == Flux.LEARNEDDIFFUSION:
+		if delta:
+			raise NotImplementedError
+		else:
+			flux_right = stencil_flux_FV_1D_burgers_diffusion(a, core_params, model, params)
+	else:
+		raise NotImplementedError
 
 	if global_stabilization:
 		flux_right = _global_stabilization(flux_right, a, epsilon_gs=epsilon_gs, G = G)
@@ -212,7 +216,7 @@ def time_derivative_FV_1D_burgers(core_params, **kwargs):
 		else:
 			forcing_term = 0.0
 
-		if core_params.nu > 0.0:
+		if core_params.nu > 0.0 and core_params.flux != Flux.LEARNEDDIFFUSION:
 			diffusion_term = core_params.nu * _diffusion_term_FV(a, dx)
 		else:
 			diffusion_term = 0.0
@@ -221,20 +225,4 @@ def time_derivative_FV_1D_burgers(core_params, **kwargs):
 	return dadt
 
 def time_derivative_FV_1D_burgers_train(core_params, model=None, delta=False):
-
-	def dadt(a, t, params = None, forcing_func = None):
-		nx = a.shape[0]
-		dx = core_params.Lx / nx
-		flux_term = _flux_term_FV_1D_burgers(a, core_params, model=model, params=params, delta=delta)
-		if forcing_func is not None:
-			forcing_term = integrate_f(forcing_func, t, nx, dx, n = 1)
-		else:
-			forcing_term = 0.0
-
-		if core_params.nu > 0.0:
-			diffusion_term = core_params.nu * _diffusion_term_FV(a, dx)
-		else:
-			diffusion_term = 0.0
-		return (flux_term + forcing_term + diffusion_term) / dx
-
-	return dadt
+	return lambda a, t, params, forcing_func: time_derivative_FV_1D_burgers(core_params, model=model, delta=delta, params=params)(a, t, forcing_func=forcing_func)

@@ -18,7 +18,6 @@ def get_a(f_init, t, core_params, nx):
 	return res[:,0]
 
 def f_init_sum_of_amplitudes_burgers(Lx, key=jax.random.PRNGKey(0), min_num_modes=1, max_num_modes=6, min_k = 0, max_k = 3, amplitude_max=1.0):
-	
 
 	key1, key2, key3, key4 = random.split(key, 4)
 	phases = random.uniform(key1, (max_num_modes,)) * 2 * PI

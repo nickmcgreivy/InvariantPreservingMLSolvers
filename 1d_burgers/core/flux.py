@@ -11,6 +11,8 @@ class Flux(Enum):
     WENOBAD = "wenobad"
     GODUNOVBAD = "godunovbad"
     CENTERED = "centered"
+    LEARNED = "learned"
+    LEARNEDDIFFUSION = "learned_diffusion"
 
     def __str__(self):
         return self.value
