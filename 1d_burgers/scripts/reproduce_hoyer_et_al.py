@@ -195,9 +195,9 @@ def get_model(core_params, stencil_params, delta=True, diffusion=False):
 # HYPERPARAMETERS
 #################
 
-train_id = 'reproduce_diffusion'
+train_id = 'reproduce'
 init_description = 'zeros'
-simname = "debug"
+simname = 'reproduce'
 
 n_runs = 800
 datapoints_per_run = 10
@@ -267,7 +267,7 @@ forcing_fn = forcing_func_sum_of_modes(core_params_weno.Lx, **kwargs_forcing)
 # In[ ]:
 
 
-#save_training_data(key, init_fn, forcing_fn, core_params_weno, sim_params, sim_weno, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs, delta=delta)
+save_training_data(key, init_fn, forcing_fn, core_params_weno, sim_params, sim_weno, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs, delta=delta)
 
 
 # In[ ]:
@@ -300,21 +300,24 @@ for i, nx in enumerate(nxs):
 
 
 # In[ ]:
-"""
 
+
+"""
 print("Equation is 1D Burgers")
 for i, nx in enumerate(nxs):
     losses, _ = load_training_params(nx, sim_params, training_params(nx), model)
     plt.plot(losses, label=nx)
     print("nx is {}, average loss is {}".format(nx, (losses)))
-plt.ylim([0,0.5])
+plt.ylim([0,0.001])
 plt.legend()
 plt.show()
+"""
 
 
 # In[ ]:
 
 
+"""
 # pick a key that gives something nice
 key = jax.random.PRNGKey(29)
 
@@ -388,80 +391,72 @@ for i, nx in enumerate(nxs):
     plt.plot(l2_norm_trajectory(trajectory_model))
     plt.plot(l2_norm_trajectory(trajectory_exact_ds))
     plt.show()
+"""
 
 
 # In[ ]:
 
 
-N = 0
+N = 50
 
-mae_weno = []
-mae_god = []
-mae_learned = []
-mae_learned_gs = []
-mae_weno_bad = []
-mae_god_bad = []
-mae_zeros = []
+mae_weno = onp.zeros(len(nxs))
+mae_god = onp.zeros(len(nxs))
+mae_learned = onp.zeros(len(nxs))
+mae_learned_gs = onp.zeros(len(nxs))
+mae_weno_bad = onp.zeros(len(nxs))
+mae_god_bad = onp.zeros(len(nxs))
+mae_zeros = onp.zeros(len(nxs))
 
 def mae_loss(v, v_ex):
     diff = v - v_ex
     return jnp.mean(jnp.absolute(diff))
 
-for i, nx in enumerate(nxs):
-    print(nx)
-    
-    key = jax.random.PRNGKey(16)
-    
-    _, params = load_training_params(nx, sim_params, training_params(nx), model)
-    t_inner = 0.1
-    outer_steps = 150
-    outer_steps_warmup = 100
-    
-    mae_weno_nx = 0.0
-    mae_god_nx = 0.0
-    mae_god_bad_nx = 0.0
-    mae_weno_bad_nx = 0.0
-    mae_learned_nx = 0.0
-    mae_learned_gs_nx = 0.0
-    mae_zeros_nx = 0.0
-    
-    vmap_convert = vmap(convert_FV_representation, (0, None, None), 0)
-    
-    for n in range(N):
-        print(n)
-        
-        key, key1, key2 = jax.random.split(key, 3)
-        
-        f_init = get_initial_condition_fn(core_params_weno, 'zeros', key=key1, **kwargs_init)
-        f_forcing = forcing_fn(key2)
-        
-        step_fn = lambda a, t, dt: sim_weno.step_fn(a, t, dt, forcing_func = f_forcing)
-        inner_fn = get_inner_fn(step_fn, sim_weno.dt_fn, t_inner)
-        trajectory_fn_weno = get_trajectory_fn(inner_fn, outer_steps)
+t_inner = 0.1
+outer_steps = 150
+outer_steps_warmup = 100
+key = jax.random.PRNGKey(16)
 
+    
+vmap_convert = vmap(convert_FV_representation, (0, None, None), 0)
 
-        t0 = 0.0
-        a0_exact = get_a0(f_init, core_params_weno, nx_exact)
-        x0_exact = (a0_exact, t0)
+for n in range(N):
+    print(n)
+    
+    key, key1, key2 = jax.random.split(key, 3)
 
-        #warmup
-        trajectory_exact, trajectory_t = trajectory_fn_weno(x0_exact)
-        a0_exact = trajectory_exact[-1]
-        t0 = trajectory_t[-1]
+    f_init = get_initial_condition_fn(core_params_weno, 'zeros', key=key1, **kwargs_init)
+    f_forcing = forcing_fn(key2)
+
+    step_fn = lambda a, t, dt: sim_weno.step_fn(a, t, dt, forcing_func = f_forcing)
+    inner_fn = get_inner_fn(step_fn, sim_weno.dt_fn, t_inner)
+    trajectory_fn_weno = get_trajectory_fn(inner_fn, outer_steps)
+    
+    t0_init = 0.0
+    a0_init = get_a0(f_init, core_params_weno, nx_exact)
+    x0_init = (a0_init, t0_init)
+
+    #warmup
+    trajectory_exact, trajectory_t = trajectory_fn_weno(x0_init)
+    a0_exact = trajectory_exact[-1]
+    t0 = trajectory_t[-1]
+    x0_exact = (a0_exact, t0)
+    
+    # exact trajectory
+    trajectory_exact, _ = trajectory_fn_weno(x0_exact)
+    
+
+    
+    for i, nx in enumerate(nxs):
+        print(nx)
         a0 = convert_FV_representation(a0_exact, nx, core_params_weno.Lx)
         x0 = (a0, t0)
-        x0_exact = (a0_exact, t0)
         
-        
-        # exact trajectory
-        trajectory_exact, _ = trajectory_fn_weno(x0_exact)
-        trajectory_exact_ds = vmap(convert_FV_representation, (0, None, None), 0)(trajectory_exact, nx, core_params_weno.Lx)
-    
+        # exact trajectory downsampled
+        trajectory_exact_ds = vmap_convert(trajectory_exact, nx, core_params_weno.Lx)
         
         # WENO
         trajectory_weno, _ = trajectory_fn_weno(x0)
         
-
         # Godunov
         step_fn = lambda a, t, dt: sim_god.step_fn(a, t, dt, forcing_func = f_forcing)
         inner_fn = get_inner_fn(step_fn, sim_god.dt_fn, t_inner)
@@ -496,26 +491,13 @@ for i, nx in enumerate(nxs):
         trajectory_fn_model_gs = get_trajectory_fn(inner_fn_model_gs, outer_steps)
         trajectory_model_gs, _ = trajectory_fn_model_gs(x0)    
 
-
-
-    
-        
-        mae_weno_nx += mae_loss(trajectory_weno, trajectory_exact_ds) / N
-        mae_god_nx += mae_loss(trajectory_god, trajectory_exact_ds) / N
-        mae_god_bad_nx += mae_loss(trajectory_god_bad, trajectory_exact_ds) / N
-        mae_weno_bad_nx += mae_loss(trajectory_weno_bad, trajectory_exact_ds) / N
-        mae_learned_nx += mae_loss(trajectory_model, trajectory_exact_ds) / N
-        mae_learned_gs_nx += mae_loss(trajectory_model_gs, trajectory_exact_ds) / N
-        mae_zeros_nx += mae_loss(jnp.zeros(trajectory_exact_ds.shape), trajectory_exact_ds) / N
-        
-    mae_weno.append(mae_weno_nx)
-    mae_god.append(mae_god_nx)
-    mae_learned.append(mae_learned_nx)
-    mae_learned_gs.append(mae_learned_gs_nx)
-    mae_god_bad.append(mae_god_bad_nx)
-    mae_weno_bad.append(mae_weno_bad_nx)
-    mae_zeros.append(mae_zeros_nx)
-
+        mae_weno[i] += mae_loss(trajectory_weno, trajectory_exact_ds) / N
+        mae_god[i] += mae_loss(trajectory_god, trajectory_exact_ds) / N
+        mae_god_bad[i] += mae_loss(trajectory_god_bad, trajectory_exact_ds) / N
+        mae_weno_bad[i] += mae_loss(trajectory_weno_bad, trajectory_exact_ds) / N
+        mae_learned[i] += mae_loss(trajectory_model, trajectory_exact_ds) / N
+        mae_learned_gs[i] += mae_loss(trajectory_model_gs, trajectory_exact_ds) / N
+        mae_zeros[i] += mae_loss(jnp.zeros(trajectory_exact_ds.shape), trajectory_exact_ds) / N
     
 maes = jnp.asarray([mae_weno, mae_god, mae_god_bad, mae_weno_bad, mae_learned, mae_learned_gs, mae_zeros])
 
@@ -523,22 +505,14 @@ with open('maes.npy', 'wb') as f:
     onp.save(f, maes)
 
 
-
 # In[ ]:
-
+"""
 
 with open('maes.npy', 'rb') as f:
     maes = onp.load(f,allow_pickle=True)
 print(maes)
 
 mae_weno, mae_god, mae_god_bad, mae_weno_bad, mae_learned, mae_learned_gs, mae_zeros = maes
-nxs_rev = [256, 128, 64, 32, 16]
-
-
-# In[ ]:
-
-
-
 
 
 # In[ ]:
@@ -548,7 +522,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 
-
+nxs_rev = [256, 128, 64, 32, 16]
 
 print(mae_weno)
 print(mae_god)
@@ -558,7 +532,7 @@ print(mae_learned)
 print(mae_learned_gs)
 print(mae_zeros)
 
-fig, axs = plt.subplots(1, 1, figsize=(6, 4))
+fig, axs = plt.subplots(1, 1, figsize=(7, 3.25))
 axs.spines['top'].set_visible(False)
 axs.spines['right'].set_visible(False)
 linewidth = 2
@@ -569,15 +543,15 @@ linewidth = 2
 #linestyles = ["solid", "solid", "solid", "solid", "solid", "solid", "solid"]
 #markers=[ ".", ".", ".", ".", ".", "."]
 
-maes = [mae_god, mae_weno, mae_learned]
-labels = ["1st Order", "WENO", "Neural Net"]
-colors = ["#1f77b4", "purple", "brown"]
-linestyles = ["solid", "solid", "solid"]
-markers=["^", "*", "s"]
+maes = [mae_god, mae_weno, mae_learned, mae_learned_gs]
+labels = ["1st Order", "WENO", "ML", "ML Invariant-\nPreserving"]
+colors = ["#1f77b4", "purple", "black", "black"]
+linestyles = ["solid", "solid", "solid", "--"]
+markers=["^", "*", "s", "s"]
 
 for k, mae in enumerate(maes):
-    plt.loglog(nxs_rev, mae, color=colors[k], linewidth=linewidth, linestyle=linestyles[k])
-    plt.plot(nxs_rev, mae, color=colors[k], markersize=12, marker=markers[k], label = labels[k])
+    plt.loglog(nxs_rev, jnp.nan_to_num(jnp.asarray(mae), nan=1e2), color=colors[k], linewidth=linewidth, linestyle=linestyles[k], markersize=12, marker=markers[k])
+    #plt.plot(nxs_rev, mae, color=colors[k], markersize=12, marker=markers[k], label = labels[k])
 #plt.loglog(nxs, [1e-1] * len(nxs), color='black', linewidth=0.5)
 #plt.loglog(nxs, [1e-2] * len(nxs), color='black', linewidth=0.5)
 #plt.loglog(nxs, [1e-3] * len(nxs), color='black', linewidth=0.5)
@@ -598,13 +572,15 @@ for k, mae in enumerate(maes):
             [],
             color=colors[k],
             linewidth=linewidth,
+            linestyle=linestyles[k],
             label=labels[k],
-            marker=markers[k]
+            marker=markers[k],
+            markersize=10,
         )
     )
     
-plt.ylim([1e-4 - 2e-5, 3e-1])
-axs.legend(handles=handles,loc=(0.95,0.3) , prop={'size': 18}, frameon=False)
+plt.ylim([1e-4 - 1e-5, 3e-1])
+axs.legend(handles=handles,loc=(0.98,0.1) , prop={'size': 16}, frameon=False)
 
 fig.tight_layout()
 
@@ -617,5 +593,5 @@ plt.show()
 # In[ ]:
 
 
-"""
 
+"""

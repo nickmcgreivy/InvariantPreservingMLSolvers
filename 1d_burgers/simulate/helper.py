@@ -315,7 +315,7 @@ def integrate_f(f, t, nx, dx, quad_func=_fixed_quad, n=5):
 	a = dx * j
 	b = dx * (j + 1)
 
-	to_int_func = lambda x: f(x, t)
+	to_int_func = lambda x: f(x, t)[:,None]
 
 	return _vmap_fixed_quad(to_int_func, a, b)[...,0]
 
