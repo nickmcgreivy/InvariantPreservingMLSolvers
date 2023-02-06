@@ -144,7 +144,7 @@ class CNNPeriodic1D(nn.Module):
 			kernel_size=(self.kernel_out,),
 			padding="VALID",
 			dtype=dtype,
-			kernel_init=zeros_init,
+			kernel_init=kernel_init,
 			bias_init=bias_init,
 		)
 
