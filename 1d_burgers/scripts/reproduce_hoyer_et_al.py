@@ -413,7 +413,7 @@ def mae_loss(v, v_ex):
 
 t_inner = 0.1
 outer_steps = 150
-outer_steps_warmup = 100
+outer_steps_warmup = 0
 key = jax.random.PRNGKey(16)
 
     
@@ -429,16 +429,20 @@ for n in range(N):
 
     step_fn = lambda a, t, dt: sim_weno.step_fn(a, t, dt, forcing_func = f_forcing)
     inner_fn = get_inner_fn(step_fn, sim_weno.dt_fn, t_inner)
+    
+    trajectory_fn_warmup = get_trajectory_fn(inner_fn, outer_steps_warmup)
     trajectory_fn_weno = get_trajectory_fn(inner_fn, outer_steps)
+    
+    
     
     t0_init = 0.0
     a0_init = get_a0(f_init, core_params_weno, nx_exact)
     x0_init = (a0_init, t0_init)
 
     #warmup
-    trajectory_exact, trajectory_t = trajectory_fn_weno(x0_init)
-    a0_exact = trajectory_exact[-1]
-    t0 = trajectory_t[-1]
+    #trajectory_exact, trajectory_t = trajectory_fn_warmup(x0_init)
+    a0_exact = a0_init #trajectory_exact[-1]
+    t0 = t0_init #trajectory_t[-1]
     x0_exact = (a0_exact, t0)
     
     # exact trajectory
@@ -532,6 +536,8 @@ print(mae_learned)
 print(mae_learned_gs)
 print(mae_zeros)
 
+mae_nn = jnp.asarray([1.5e-2, 2e-3, 3.5e-4, 1.9e-4, 1.3e-4])
+
 fig, axs = plt.subplots(1, 1, figsize=(7, 3.25))
 axs.spines['top'].set_visible(False)
 axs.spines['right'].set_visible(False)
@@ -545,16 +551,17 @@ linewidth = 2
 
 maes = [mae_god, mae_weno, mae_learned, mae_learned_gs]
 labels = ["1st Order", "WENO", "ML", "ML Invariant-\nPreserving"]
-colors = ["#1f77b4", "purple", "black", "black"]
+colors = ["#1f77b4", "purple", "black", "red"]
 linestyles = ["solid", "solid", "solid", "--"]
 markers=["^", "*", "s", "s"]
+markersize = ["12", "12", "12", "6"]
 
 for k, mae in enumerate(maes):
-    plt.loglog(nxs_rev, jnp.nan_to_num(jnp.asarray(mae), nan=1e2), color=colors[k], linewidth=linewidth, linestyle=linestyles[k], markersize=12, marker=markers[k])
+    plt.loglog(nxs_rev, jnp.nan_to_num(jnp.asarray(mae), nan=1e2), color=colors[k], linewidth=linewidth, linestyle=linestyles[k], markersize=markersize[k], marker=markers[k])
     #plt.plot(nxs_rev, mae, color=colors[k], markersize=12, marker=markers[k], label = labels[k])
-#plt.loglog(nxs, [1e-1] * len(nxs), color='black', linewidth=0.5)
-#plt.loglog(nxs, [1e-2] * len(nxs), color='black', linewidth=0.5)
-#plt.loglog(nxs, [1e-3] * len(nxs), color='black', linewidth=0.5)
+
+plt.loglog(nxs_rev, mae_nn, color="brown", linewidth=linewidth, linestyle="solid", markersize=12, marker='s')
+    
 
 axs.set_xticks([16, 32, 64, 128, 256])
 axs.set_xticklabels(["2", "4", "8", "16", "32"], fontsize=18)
@@ -575,9 +582,22 @@ for k, mae in enumerate(maes):
             linestyle=linestyles[k],
             label=labels[k],
             marker=markers[k],
-            markersize=10,
+            markersize=markersize[k],
         )
     )
+
+handles.append(
+    mlines.Line2D(
+        [],
+        [],
+        color="brown",
+        linewidth=linewidth,
+        linestyle="solid",
+        label="Bar-Sinai &\nHoyer et al.",
+        marker="s",
+        markersize=12,
+    )
+)
     
 plt.ylim([1e-4 - 1e-5, 3e-1])
 axs.legend(handles=handles,loc=(0.98,0.1) , prop={'size': 16}, frameon=False)
@@ -585,8 +605,8 @@ axs.legend(handles=handles,loc=(0.98,0.1) , prop={'size': 16}, frameon=False)
 fig.tight_layout()
 
 
-#plt.savefig('burgers_mse_vs_nx.png')
-#plt.savefig('burgers_mse_vs_nx.eps')
+#plt.savefig('burgers_mse_vs_nx_n1.png')
+#plt.savefig('burgers_mse_vs_nx_n1.eps')
 plt.show()
 
 
