@@ -5,7 +5,7 @@ from jax import vmap
 from flux import Flux
 from boundaryconditions import BoundaryCondition
 from helper import get_p, get_u, get_H, get_c
-from model import stencil_flux_FV_1D_euler
+from model import stencil_flux_FV_1D_euler, model_flux_FV_1D_euler
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -273,6 +273,13 @@ def flux_musclcharacteristic_periodic(a, core_params):
 	return F_R
 
 
+def flux_learned_periodic(a, core_params, model = None, params = None):
+	return model_flux_FV_1D_euler(a, model, params)
+
+def flux_learned_ghost(a, core_params, model=None, params=None):
+	return model_flux_FV_1D_euler(a, model, params)
+
+
 def _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn=None):
 	if core_params.flux == Flux.MUSCLCONSERVED:
 		flux_term = lambda a: flux_musclconserved_periodic(a, core_params)
@@ -290,6 +297,8 @@ def _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn=
 	elif core_params.flux == Flux.RUSANOV:
 		flux_fn = flux_rusanov
 		flux_term = flux_periodic(a, core_params, flux_fn)
+	elif core_params.flux == Flux.LEARNED:
+		flux_term = lambda a: flux_learned_periodic(a, core_params, model = model, params = params)
 	else:
 		raise NotImplementedError
 	return flux_term
@@ -312,6 +321,8 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 	elif core_params.flux == Flux.RUSANOV:
 		flux_fn = flux_rusanov
 		flux_term = flux_ghost(a, core_params, flux_fn)
+	elif core_params.flux == Flux.LEARNED:
+		flux_term = lambda a: flux_learned_ghost(a, core_params, model = model, params = params)
 	else:
 		raise NotImplementedError
 
@@ -321,27 +332,31 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None):
 
 	if core_params.bc == BoundaryCondition.GHOST:
-		flux_term = _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn = None)
+		flux_term = _time_derivative_euler_ghost(core_params, model=model, params=params, dt_fn = dt_fn)
 		def dadt(a):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
 			F = flux_term(a) 
+			"""
 			if params is not None:
 				raise NotImplementedError
 				F = F + delta_F
+			"""
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
 			return (F_L - F_R) / dx
 
 	elif core_params.bc == BoundaryCondition.PERIODIC:
-		flux_term = _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn = None)
+		flux_term = _time_derivative_euler_periodic(core_params, model=model, params=params, dt_fn = dt_fn)
 		def dadt(a):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
 			flux_right = flux_term(a) 
+			"""
 			if params is not None:
 				delta_flux = stencil_flux_FV_1D_euler(a, model, params)
 				flux_right = flux_right + delta_flux
+			"""
 			flux_left = jnp.roll(flux_right, 1, axis=1)
 			return (flux_left - flux_right) / dx
 	else:

@@ -14,6 +14,14 @@ class TrainingParams:
 
 
 @dataclass
+class ModelParams:
+	kernel_size: int
+	kernel_out: int
+	depth: int
+	width: int
+
+
+@dataclass
 class StencilParams:
 	kernel_size: int
 	kernel_out: int

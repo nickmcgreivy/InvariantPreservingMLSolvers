@@ -130,8 +130,8 @@ def create_train_state(model, params, training_params):
 		init_value=training_params.learning_rate,
 		end_value=training_params.learning_rate / 10,
 		power=1,
-		transition_steps=training_params.num_training_iterations // 2,
-		transition_begin=training_params.num_training_iterations // 4,
+		transition_steps=1,
+		transition_begin=training_params.num_training_iterations // 2,
 	)
 	if training_params.optimizer == "adam":
 		tx = optax.chain(optax.adam(schedule_fn), optax.zero_nans())
