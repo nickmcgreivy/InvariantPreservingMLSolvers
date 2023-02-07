@@ -298,7 +298,10 @@ def _time_derivative_euler_periodic(core_params, model=None, params=None, dt_fn=
 		flux_fn = flux_rusanov
 		flux_term = flux_periodic(a, core_params, flux_fn)
 	elif core_params.flux == Flux.LEARNED:
-		flux_term = lambda a: flux_learned_periodic(a, core_params, model = model, params = params)
+		def flux_term(a):
+			flux_right = flux_musclcharacteristic_periodic(a, core_params)
+			delta_flux_right = flux_learned_periodic(a, core_params, model = model, params = params)
+			return flux_right + delta_flux_right
 	else:
 		raise NotImplementedError
 	return flux_term
@@ -322,7 +325,10 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 		flux_fn = flux_rusanov
 		flux_term = flux_ghost(a, core_params, flux_fn)
 	elif core_params.flux == Flux.LEARNED:
-		flux_term = lambda a: flux_learned_ghost(a, core_params, model = model, params = params)
+		def flux_term(a):
+			flux_right = flux_musclcharacteristic_ghost(a, core_params)
+			delta_flux_right = flux_learned_ghost(a, core_params, model = model, params = params)
+			return flux_right + delta_flux_right
 	else:
 		raise NotImplementedError
 
