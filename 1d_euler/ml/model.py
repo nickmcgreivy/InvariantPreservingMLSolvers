@@ -34,7 +34,7 @@ def stencil_flux_FV_1D_euler(a, model, params):
 
 
 def model_flux_FV_1D_euler(a, model, params):
-	F = model.apply(params, a)  # (3, nx, S)
+	F = model.apply(params, a)  # (3, nx)
 	return F
 
 
@@ -67,7 +67,7 @@ class LearnedFlux(nn.Module):
 	def __call__(self, inputs):
 		x = jnp.transpose(inputs, (1, 0)) # (nx, 3)
 		x = self.conv(x)  # x is (nx, 3) if periodic or (nx+1, 3) if non-periodic
-		x = jnp.transpose(x, (0, 1)) # (3, nx) or (3, nx+1)
+		x = jnp.transpose(x, (1, 0)) # (3, nx) or (3, nx+1)
 		return x
 
 
@@ -150,7 +150,7 @@ class CNNPeriodic1D(nn.Module):
 			kernel_size=(self.kernel_out,),
 			padding="VALID",
 			dtype=dtype,
-			kernel_init=zeros_init,
+			kernel_init=kernel_init,
 			bias_init=bias_init,
 		)
 
@@ -216,7 +216,7 @@ class CNNGhost1D(nn.Module):
 			kernel_size=(self.kernel_out,),
 			padding="VALID",
 			dtype=dtype,
-			kernel_init=zeros_init,
+			kernel_init=kernel_init,
 			bias_init=bias_init,
 		)
 

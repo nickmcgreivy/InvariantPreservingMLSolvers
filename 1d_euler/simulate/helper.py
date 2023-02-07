@@ -171,7 +171,7 @@ def convert_FV_representation(a, nx_new, Lx):
 	Converts one FV representation to another. Starts by writing a function
 	which does the mapping for a single timestep, then vmaps for many timesteps.
 	"""
-	nx_old = a.shape[0]
+	nx_old = a.shape[1]
 	dx_old = Lx / nx_old
 	dx_new = Lx / nx_new
 
@@ -207,7 +207,7 @@ def get_u(a, core_params):
 	return a[1] / a[0]
 
 def get_p(a, core_params):
-	E = a[3]
+	E = a[2]
 	p = (E - (1/2 * a[1]**2 / a[0]) ) * (core_params.gamma - 1)
 	return p
 
