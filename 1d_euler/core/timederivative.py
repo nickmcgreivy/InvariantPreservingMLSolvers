@@ -328,7 +328,7 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 		def flux_term(a):
 			flux_right = flux_musclcharacteristic_ghost(a, core_params)
 			delta_flux_right = flux_learned_ghost(a, core_params, model = model, params = params)
-			return flux_right + delta_flux_right
+			return flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
 	else:
 		raise NotImplementedError
 
@@ -344,7 +344,7 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 		return a - 2 * delta * flux_right, jnp.roll(a + 2 * delta * jnp.roll(flux_right, 1, axis=-1), -1, axis=-1)
 
 
-	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(a), core_params.Lx / aL.shape[1])
+	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(a), core_params.Lx / a.shape[1])
 	flux_right_LF = flux_periodic(a, core_params, flux_fn)
 
 	nx = a.shape[-1]
@@ -406,31 +406,92 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 
 
 def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
-	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(aL), core_params.Lx / aL.shape[1])
-	flux_right_lax_friedrichs = flux_ghost(a, core_params, flux_fn)
 
-	raise NotImplementedError
-	#theta_right = ...
-	return theta_right * flux_right + (1 - theta_right) * flux_right_lax_friedrichs
+	def get_a_plus_minus(a, flux_right, core_params, delta):
+		# a is (3, nx+1), F is (3, nx+1), want to return 
+		return (a - 2 * delta * flux_right[:,1:])[:,:-1], (a + 2 * delta * flux_right[:,:-1])[:,1:]
+
+	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(a), core_params.Lx / a.shape[1])
+	flux_right_LF = flux_ghost(a, core_params, flux_fn) # (3, nx + 1)
+
+	nx = a.shape[-1] # (3, nx)
+	dt = dt_fn(a)
+	dx = core_params.Lx / nx
+	delta = dt/dx
+	init_ones = jnp.ones((nx - 1))
+
+	a_plus, a_minus = get_a_plus_minus(a, flux_right, core_params, delta) #(3, nx-1)
+	rho_plus = a_plus[0]
+	rho_minus = a_minus[0]
+
+
+	a_LF_plus, a_LF_minus = get_a_plus_minus(a, flux_right_LF, core_params, delta) #(3, nx-1)
+	rho_LF_plus = a_LF_plus[0]
+	rho_LF_minus = a_LF_minus[0]
+	p_LF_plus = get_p(a_LF_plus, core_params)
+	p_LF_minus = get_p(a_LF_minus, core_params)
+
+	### ensure positive density
+	epsilon_rho = 1e-3
+
+	below_zero = rho_plus < epsilon_rho 
+	above_zero = rho_plus >= epsilon_rho
+	theta_plus_below = (rho_LF_plus - epsilon_rho) / (rho_LF_plus - rho_plus)
+	theta_plus = jnp.ones((nx + 1))
+	theta_plus = theta_plus.at[1:-1].set(below_zero * theta_plus_below + above_zero * init_ones)
+
+	below_zero = rho_minus < epsilon_rho
+	above_zero = rho_minus >= epsilon_rho
+	theta_minus_below = (rho_LF_minus - epsilon_rho) / (rho_LF_minus - rho_minus)
+	theta_minus = jnp.ones((nx + 1))
+	theta_minus = theta_minus.at[1:-1].set(below_zero * theta_minus_below + above_zero * init_ones)
+
+	theta_rho = jnp.minimum(theta_plus, theta_minus) # (3, nx + 1)
+
+	flux_right_star = theta_rho * flux_right + (1 - theta_rho) * flux_right_LF # (3, nx + 1)
+
+	a_star_plus, a_star_minus = get_a_plus_minus(a, flux_right_star, core_params, delta)
+	p_star_plus = get_p(a_star_plus, core_params)
+	p_star_minus = get_p(a_star_minus, core_params)
+
+	### ensure positive pressure
+	epsilon_p = 1e-3
+
+	below_zero = p_star_plus < epsilon_p
+	above_zero = p_star_plus >= epsilon_p
+	theta_plus_below = (p_LF_plus - epsilon_p) / (p_LF_plus - p_star_plus)
+	theta_plus = jnp.ones((nx + 1))
+	theta_plus = theta_plus.at[1:-1].set(below_zero * theta_plus_below + above_zero * init_ones)
+
+
+	below_zero = p_star_minus < epsilon_p
+	above_zero = p_star_minus >= epsilon_p
+	theta_minus_below = (p_LF_minus - epsilon_p) / (p_LF_minus - p_star_minus)
+	theta_minus = jnp.ones((nx + 1))
+	theta_minus = theta_minus.at[1:-1].set(below_zero * theta_minus_below + above_zero * init_ones)
+
+	theta_p = jnp.minimum(theta_plus, theta_minus)
+
+	return theta_p * flux_right_star + (1 - theta_p) * flux_right_LF
+
 
 def entropy_increase_periodic(a, flux_right, core_params):
 
 	def G_primitive_periodic(a, core_params):
-			p = get_p(a, core_params)
-			rho = a[0]
-			zeros = jnp.zeros(rho.shape)
-			u = a[1] / a[0]
-			G = jnp.concatenate([rho[None], u[None], p[None]],axis=0)
-			return np.roll(G, -1, axis=-1) - G
+		p = get_p(a, core_params)
+		rho = a[0]
+		zeros = jnp.zeros(rho.shape)
+		u = a[1] / a[0]
+		G = jnp.concatenate([zeros[None], u[None], p[None]],axis=0)
+		return jnp.roll(G, -1, axis=-1) - G
 
 	G_R = G_primitive_periodic(a, core_params) # (3, nx)
 	w = get_w(a, core_params) # (3, nx)
 	w_plus_one = jnp.roll(w, -1, axis=-1) 
 	diff_w = (w_plus_one - w)
-	deta_dt_old = jnp.sum(F_R * diff_w)
-	deta_dt_new = 0.0
+	deta_dt_old = jnp.sum(flux_right * diff_w)
 	denom = jnp.sum(G_R * diff_w)
-	return flux_right + (deta_dt_old < 0.0) * (-deta_dt_old) * G_R / denom
+	return flux_right - (deta_dt_old < 0.0) * deta_dt_old * G_R / denom
 
 def entropy_increase_ghost(a, flux_right, core_params):
 
@@ -439,17 +500,16 @@ def entropy_increase_ghost(a, flux_right, core_params):
 			rho = a[0]
 			zeros = jnp.zeros(rho.shape)
 			u = a[1] / a[0]
-			G = jnp.concatenate([rho[None], u[None], p[None]],axis=0)
+			G = jnp.concatenate([zeros[None], u[None], p[None]], axis=0)
 			return G[:,1:] - G[:,:-1]
 
 	G_R = G_primitive_ghost(a, core_params) # (3, nx-1)
 	w = get_w(a, core_params) # (3, nx)
 	diff_w = (w[:,1:] - w[:,:-1])
-	deta_dt_old = jnp.sum(F[:,1:-1] * diff_w)
-	deta_dt_new = 0.0
+	deta_dt_old = jnp.sum(flux_right[:,1:-1] * diff_w)
 	denom = jnp.sum(G_R * diff_w)
-	F = F.at[:,1:-1].add((deta_dt_old < 0.0) * (-deta_dt_old) * G_R / denom)
-	return F
+	flux_right = flux_right.at[:,1:-1].add(-1 * (deta_dt_old < 0.0) * deta_dt_old * G_R / denom)
+	return flux_right
 
 
 def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None, invariant_preserving=False,):
@@ -465,10 +525,11 @@ def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = No
 				# preserve positivity
 
 				assert dt_fn is not None
-				flux_right = positivity_limiter_ghost(a, flux_right, core_params, dt_fn)
+				F = positivity_limiter_ghost(a, F, core_params, dt_fn)
+
 				# enforce entropy increase
 
-				#flux_right = entropy_increase_ghost(a, flux_right)
+				F = entropy_increase_ghost(a, F, core_params)
 
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
@@ -488,8 +549,7 @@ def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = No
 				flux_right = positivity_limiter_periodic(a, flux_right, core_params, dt_fn)
 
 				# enforce entropy increase
-
-				#flux_right = entropy_increase_periodic(a, flux_right)
+				flux_right = entropy_increase_periodic(a, flux_right, core_params)
 
 			flux_left = jnp.roll(flux_right, 1, axis=1)
 			return (flux_left - flux_right) / dx
