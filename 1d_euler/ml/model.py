@@ -11,11 +11,8 @@ from typing import Sequence
 
 from boundaryconditions import BoundaryCondition
 
-
+"""
 def stencil_flux_FV_1D_euler(a, model, params):
-	"""
-	A correction on the flux due to the learned model
-	"""
 	s = model.apply(params, a)  # (3, nx, S)
 	a_pad = jnp.pad(
 		a,
@@ -31,6 +28,7 @@ def stencil_flux_FV_1D_euler(a, model, params):
 	)
 	F = jnp.sum(P * s, axis=-1)
 	return F
+"""
 
 
 def model_flux_FV_1D_euler(a, model, params):
@@ -71,24 +69,25 @@ class LearnedFlux(nn.Module):
 		return x
 
 
-class LearnedStencil(nn.Module):
-	"""
-	For a single set of Euler FV coefficients, applies a NN to produce
-	the stencil s_{j+\frac{1}{2}, l, k}
+#class LearnedStencil(nn.Module):
+"""
+For a single set of Euler FV coefficients, applies a NN to produce
+the stencil s_{j+\frac{1}{2}, l, k}
 
-	Inputs
-	features: A sequence of ints, which gives the number of features in each convolution. The
-					  length of features gives the number of convolutions (until the last convolution)
-	kernel_size: The size of the convolutional kernel, should be even
-	S: The number of outputs for each position, which is the size of the stencil applied to the network.
-			   Should be even.
-	inputs: (3, nx) array of FV Euler coefficients
+Inputs
+features: A sequence of ints, which gives the number of features in each convolution. The
+				  length of features gives the number of convolutions (until the last convolution)
+kernel_size: The size of the convolutional kernel, should be even
+S: The number of outputs for each position, which is the size of the stencil applied to the network.
+		   Should be even.
+inputs: (3, nx) array of FV Euler coefficients
 
-	Outputs
-	learned_stencil: A (3, nx, S) array of the finite-difference coefficients
-									 to compute F, i.e. the learned stencil
-	"""
+Outputs
+learned_stencil: A (3, nx, S) array of the finite-difference coefficients
+								 to compute F, i.e. the learned stencil
+"""
 
+"""
 	features: Sequence[int]
 	kernel_size: int = 5
 	kernel_out: int = 4
@@ -110,7 +109,7 @@ class LearnedStencil(nn.Module):
 		x = jnp.transpose(x, (2, 0, 1)) # (3, nx, S)
 		x = x - jnp.mean(x, axis=-1)[..., None]
 		return x
-
+"""
 
 class CNNPeriodic1D(nn.Module):
 	"""

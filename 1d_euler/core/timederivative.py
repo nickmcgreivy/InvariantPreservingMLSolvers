@@ -5,7 +5,7 @@ from jax import vmap
 from flux import Flux
 from boundaryconditions import BoundaryCondition
 from helper import get_p, get_u, get_H, get_c, get_w
-from model import stencil_flux_FV_1D_euler, model_flux_FV_1D_euler
+from model import model_flux_FV_1D_euler
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -491,7 +491,7 @@ def entropy_increase_periodic(a, flux_right, core_params):
 	diff_w = (w_plus_one - w)
 	deta_dt_old = jnp.sum(flux_right * diff_w)
 	denom = jnp.sum(G_R * diff_w)
-	return flux_right - (deta_dt_old < 0.0) * deta_dt_old * G_R / denom
+	return flux_right - jnp.nan_to_num((deta_dt_old < 0.0) * deta_dt_old * G_R / denom)
 
 def entropy_increase_ghost(a, flux_right, core_params):
 
@@ -508,7 +508,7 @@ def entropy_increase_ghost(a, flux_right, core_params):
 	diff_w = (w[:,1:] - w[:,:-1])
 	deta_dt_old = jnp.sum(flux_right[:,1:-1] * diff_w)
 	denom = jnp.sum(G_R * diff_w)
-	flux_right = flux_right.at[:,1:-1].add(-1 * (deta_dt_old < 0.0) * deta_dt_old * G_R / denom)
+	flux_right = flux_right.at[:,1:-1].add(jnp.nan_to_num(-1 * (deta_dt_old < 0.0) * deta_dt_old * G_R / denom))
 	return flux_right
 
 

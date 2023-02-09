@@ -11,7 +11,6 @@ from optax import polynomial_schedule
 from helper import convert_FV_representation
 from trajectory import get_inner_fn, get_trajectory_fn
 from initialconditions import get_a0
-from model import stencil_flux_FV_1D_euler
 from lossfunctions import mse_loss_FV
 from simulations import EulerFVSim
 from boundaryconditions import BoundaryCondition
