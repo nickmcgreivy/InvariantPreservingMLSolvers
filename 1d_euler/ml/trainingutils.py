@@ -11,10 +11,11 @@ from optax import polynomial_schedule
 from helper import convert_FV_representation
 from trajectory import get_inner_fn, get_trajectory_fn
 from initialconditions import get_a0
-from lossfunctions import mse_loss_FV
+from lossfunctions import mse_loss_FV, one_norm_grad_f_model
 from simulations import EulerFVSim
 from boundaryconditions import BoundaryCondition
 from timederivative import time_derivative_FV_1D_euler
+from model import model_flux_FV_1D_euler
 
 def create_training_data(sim_params, core_params, nxs, N):
 	for nx in nxs:
@@ -133,16 +134,23 @@ def get_batch_fn(core_params, sim_params, training_params, nx):
 	return batch_fn
 
 
-def get_loss_fn(model, core_params):    
+def get_loss_fn(model, core_params, regularization = 0.1):    
 
 	dadt_fn = lambda a, params: time_derivative_FV_1D_euler(core_params, model=model, params=params)(a)
 
+	model_flux_fn = lambda a, params: model_flux_FV_1D_euler(a, model, params)
+
 	batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, None), out_axes=0)
+	vmap_one_norm_grad_f_model = jax.vmap(lambda a, params: one_norm_grad_f_model(a, params, model_flux_fn), (0, None))
 
 	@jax.jit
 	def loss_fn(params, batch):
 		dadt = batch_dadt_fn(batch["a"], params)
-		return mse_loss_FV(dadt, batch["dadt"])
+		if regularization > 0.0:
+			reg_loss = regularization * jnp.mean(vmap_one_norm_grad_f_model(batch["a"], params))
+		else:
+			reg_loss = 0.0
+		return mse_loss_FV(dadt, batch["dadt"]) + reg_loss
 
 	return loss_fn
 
