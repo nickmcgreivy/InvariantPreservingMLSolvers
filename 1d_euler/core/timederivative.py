@@ -4,8 +4,11 @@ from jax import vmap
 
 from flux import Flux
 from boundaryconditions import BoundaryCondition
-from helper import get_p, get_u, get_H, get_c, get_w
+from helper import get_p, get_u, get_H, get_c, get_w, has_negative
 from model import model_flux_FV_1D_euler
+
+from jax import config
+config.update("jax_enable_x64", True)
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -96,7 +99,6 @@ def flux_ghost(a, core_params, flux_fn):
 # MUSCL FLUXES 
 ######
 
-
 def limit_da(a, da, core_params):
 	ap = a + da
 	am = a - da
@@ -108,7 +110,6 @@ def limit_dV(V, dV, core_params):
 	Vp = V + dV
 	Vm = V - dV
 	return ~((Vp[0] < 0) | (Vm[0] < 0) | (Vp[2] < 0) | (Vm[2] < 0)) * dV
-
 
 def flux_musclconserved_ghost(a, core_params):
 	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
@@ -335,6 +336,7 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 	return flux_term
 
 
+
 def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 	"""
 	Limiter from https://www.sciencedirect.com/science/article/pii/S0021999113000557
@@ -344,8 +346,14 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 		return a - 2 * delta * flux_right, jnp.roll(a + 2 * delta * jnp.roll(flux_right, 1, axis=-1), -1, axis=-1)
 
 
+	def solve_theta(var_LF, var, epsilon):
+		init_theta = (var_LF - epsilon) / (var_LF - var)
+		valid = (init_theta > 0.0) * (init_theta < 1.0)
+		return valid * jnp.nan_to_num(init_theta, nan=0.0, posinf=0.0, neginf=0.0)
+
 	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(a), core_params.Lx / a.shape[1])
 	flux_right_LF = flux_periodic(a, core_params, flux_fn)
+
 
 	nx = a.shape[-1]
 	dt = dt_fn(a)
@@ -369,18 +377,20 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 
 	below_zero = rho_plus < epsilon_rho
 	above_zero = rho_plus >= epsilon_rho
-	theta_plus_below = (rho_LF_plus - epsilon_rho) / (rho_LF_plus - rho_plus)
+	theta_plus_below = solve_theta(rho_LF_plus, rho_plus, epsilon_rho)
 	theta_plus = below_zero * theta_plus_below + above_zero * init_ones
+
+	
 
 	below_zero = rho_minus < epsilon_rho
 	above_zero = rho_minus >= epsilon_rho
-	theta_minus_below = (rho_LF_minus - epsilon_rho) / (rho_LF_minus - rho_minus)
+	theta_minus_below = solve_theta(rho_LF_minus, rho_minus, epsilon_rho)
 	theta_minus = below_zero * theta_minus_below + above_zero * init_ones
 
 	theta_rho = jnp.minimum(theta_plus, theta_minus)
 
 
-	flux_right_star = theta_rho * flux_right + (1 - theta_rho) * flux_right_LF
+	flux_right_star = theta_rho * jnp.nan_to_num(flux_right) + (init_ones - theta_rho) * flux_right_LF
 	a_star_plus, a_star_minus = get_a_plus_minus(a, flux_right_star, core_params, delta)
 	p_star_plus = get_p(a_star_plus, core_params)
 	p_star_minus = get_p(a_star_minus, core_params)
@@ -391,18 +401,19 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 
 	below_zero = p_star_plus < epsilon_p
 	above_zero = p_star_plus >= epsilon_p
-	theta_plus_below = (p_LF_plus - epsilon_p) / (p_LF_plus - p_star_plus)
+	theta_plus_below = solve_theta(p_LF_plus, p_star_plus, epsilon_p)
 	theta_plus = below_zero * theta_plus_below + above_zero * init_ones
 
 
 	below_zero = p_star_minus < epsilon_p
 	above_zero = p_star_minus >= epsilon_p
-	theta_minus_below = (p_LF_minus - epsilon_p) / (p_LF_minus - p_star_minus)
+	theta_minus_below = solve_theta(p_LF_minus, p_star_minus, epsilon_p)
 	theta_minus = below_zero * theta_minus_below + above_zero * init_ones
 
 	theta_p = jnp.minimum(theta_plus, theta_minus)
 
-	return theta_p * flux_right_star + (1 - theta_p) * flux_right_LF
+	flux_return = theta_p * flux_right_star + (init_ones - theta_p) * flux_right_LF
+	return flux_return
 
 
 def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
@@ -410,6 +421,11 @@ def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
 	def get_a_plus_minus(a, flux_right, core_params, delta):
 		# a is (3, nx+1), F is (3, nx+1), want to return 
 		return (a - 2 * delta * flux_right[:,1:])[:,:-1], (a + 2 * delta * flux_right[:,:-1])[:,1:]
+
+	def solve_theta(var_LF, var, epsilon):
+		init_theta = (var_LF - epsilon) / (var_LF - var)
+		valid = (init_theta > 0.0) * (init_theta < 1.0)
+		return valid * jnp.nan_to_num(init_theta, nan=0.0, posinf=0.0, neginf=0.0)
 
 	flux_fn = lambda aL, aR, core_params: flux_laxfriedrichs(aL, aR, core_params, dt_fn(a), core_params.Lx / a.shape[1])
 	flux_right_LF = flux_ghost(a, core_params, flux_fn) # (3, nx + 1)
@@ -436,19 +452,19 @@ def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
 
 	below_zero = rho_plus < epsilon_rho 
 	above_zero = rho_plus >= epsilon_rho
-	theta_plus_below = (rho_LF_plus - epsilon_rho) / (rho_LF_plus - rho_plus)
+	theta_plus_below = solve_theta(rho_LF_plus, rho_plus, epsilon_rho)
 	theta_plus = jnp.ones((nx + 1))
 	theta_plus = theta_plus.at[1:-1].set(below_zero * theta_plus_below + above_zero * init_ones)
 
 	below_zero = rho_minus < epsilon_rho
 	above_zero = rho_minus >= epsilon_rho
-	theta_minus_below = (rho_LF_minus - epsilon_rho) / (rho_LF_minus - rho_minus)
+	theta_minus_below =  solve_theta(rho_LF_minus, rho_minus, epsilon_rho)
 	theta_minus = jnp.ones((nx + 1))
 	theta_minus = theta_minus.at[1:-1].set(below_zero * theta_minus_below + above_zero * init_ones)
 
 	theta_rho = jnp.minimum(theta_plus, theta_minus) # (3, nx + 1)
 
-	flux_right_star = theta_rho * flux_right + (1 - theta_rho) * flux_right_LF # (3, nx + 1)
+	flux_right_star = theta_rho * jnp.nan_to_num(flux_right) + (1 - theta_rho) * flux_right_LF # (3, nx + 1)
 
 	a_star_plus, a_star_minus = get_a_plus_minus(a, flux_right_star, core_params, delta)
 	p_star_plus = get_p(a_star_plus, core_params)
@@ -459,14 +475,14 @@ def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
 
 	below_zero = p_star_plus < epsilon_p
 	above_zero = p_star_plus >= epsilon_p
-	theta_plus_below = (p_LF_plus - epsilon_p) / (p_LF_plus - p_star_plus)
+	theta_plus_below = solve_theta(p_LF_plus, p_star_plus, epsilon_p)
 	theta_plus = jnp.ones((nx + 1))
 	theta_plus = theta_plus.at[1:-1].set(below_zero * theta_plus_below + above_zero * init_ones)
 
 
 	below_zero = p_star_minus < epsilon_p
 	above_zero = p_star_minus >= epsilon_p
-	theta_minus_below = (p_LF_minus - epsilon_p) / (p_LF_minus - p_star_minus)
+	theta_minus_below = solve_theta(p_LF_minus, p_star_minus, epsilon_p)
 	theta_minus = jnp.ones((nx + 1))
 	theta_minus = theta_minus.at[1:-1].set(below_zero * theta_minus_below + above_zero * init_ones)
 
@@ -482,7 +498,7 @@ def entropy_increase_periodic(a, flux_right, core_params):
 		rho = a[0]
 		zeros = jnp.zeros(rho.shape)
 		u = a[1] / a[0]
-		G = jnp.concatenate([zeros[None], u[None], p[None]],axis=0)
+		G = jnp.concatenate([rho[None], u[None], p[None]],axis=0)
 		return jnp.roll(G, -1, axis=-1) - G
 
 	G_R = G_primitive_periodic(a, core_params) # (3, nx)
@@ -500,7 +516,7 @@ def entropy_increase_ghost(a, flux_right, core_params):
 			rho = a[0]
 			zeros = jnp.zeros(rho.shape)
 			u = a[1] / a[0]
-			G = jnp.concatenate([zeros[None], u[None], p[None]], axis=0)
+			G = jnp.concatenate([rho[None], u[None], p[None]], axis=0)
 			return G[:,1:] - G[:,:-1]
 
 	G_R = G_primitive_ghost(a, core_params) # (3, nx-1)
