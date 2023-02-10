@@ -122,10 +122,11 @@ def get_batch_fn(core_params, sim_params, training_params, nx):
 		"r",
 	)
 	
-	trajectory = device_put(jnp.asarray(f["a"][:training_params.n_data]), jax.devices()[0])
-	dadt = device_put(jnp.asarray(f["dadt"][:training_params.n_data]), jax.devices()[0])
+	trajectory = jnp.asarray(f["a"][:training_params.n_data])
+	dadt = jnp.asarray(f["dadt"][:training_params.n_data])
 	f.close()
 
+	@jax.jit
 	def batch_fn(idxs):
 		return {"a": trajectory[idxs], "dadt": dadt[idxs]}
 
@@ -171,7 +172,6 @@ def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn, 
 		state = state.apply_gradients(grads=grads)
 		return state, loss
 
-	@jax.jit
 	def batch_step(state, key):
 		losses = []
 		idx_gen = idx_fn(key)
