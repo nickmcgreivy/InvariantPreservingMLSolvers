@@ -171,6 +171,7 @@ def train_model(model, params, training_params, key, idx_fn, batch_fn, loss_fn, 
 		state = state.apply_gradients(grads=grads)
 		return state, loss
 
+	@jax.jit
 	def batch_step(state, key):
 		losses = []
 		idx_gen = idx_fn(key)

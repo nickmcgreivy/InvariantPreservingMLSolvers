@@ -9,7 +9,7 @@
 # setup paths
 import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
-readwritedir = '/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
+readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
 
 sys.path.append('{}/core'.format(basedir))
 sys.path.append('{}/simulate'.format(basedir))
@@ -150,15 +150,15 @@ def get_model(core_params, model_params):
 
 Lx = 1.0
 gamma = 1.4
-BATCHSIZE = 128
-NUMEPOCHS = 100
+BATCHSIZE = 8 #128
+NUMEPOCHS = 10
 flux_exact = 'musclcharacteristic'
 flux_learned = 'learned'
-n_runs =  1000
-t_inner_train = 0.01
-Tf = 1.0
-sim_id = "euler_periodic_test"
-train_id = "euler_periodic_test"
+n_runs = 25 # 1000
+t_inner_train = 0.01 # 0.01
+Tf = 0.2
+sim_id = "euler_test"
+train_id = "euler_ghost_test"
 BC = 'periodic'
 
 nxs = [16, 32, 64, 128]
@@ -168,9 +168,9 @@ key_data = jax.random.PRNGKey(12)
 key_train = jax.random.PRNGKey(42)
 key_init_params = jax.random.PRNGKey(30)
 
-learning_rate_list = [1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]
+BASEBATCHSIZE = 4
 
-WIDTH = 32
+learning_rate = 1e-3
 
 ###### END HYPERPARAMS
 
@@ -180,8 +180,10 @@ kwargs_init = {'min_num_modes': 1, 'max_num_modes': 4, 'min_k': 0, 'max_k': 3, '
 kwargs_core_exact = {'Lx': Lx, 'gamma': gamma, 'bc': BC, 'fluxstr': flux_exact}
 kwargs_core_learned = {'Lx': Lx, 'gamma': gamma, 'bc': BC, 'fluxstr': flux_learned}
 kwargs_sim = {'name' : sim_id, 'cfl_safety' : 0.3, 'rk' : 'ssp_rk3'}
-kwargs_train_FV = {'train_id': train_id, 'batch_size' : BATCHSIZE, 'optimizer': 'adam', 'num_epochs' : NUMEPOCHS}
-kwargs_model = {'kernel_size' : 5, 'kernel_out' : 4, 'depth' : 3, 'width' : WIDTH}
+kwargs_train_FV = {'train_id': train_id, 'optimizer': 'adam', 'num_epochs' : NUMEPOCHS}
+
+
+kwargs_model = {'kernel_size' : 5, 'kernel_out' : 4, 'depth' : 3, 'width' : 32}
 
 
 outer_steps_train = int(Tf/t_inner_train)
@@ -191,13 +193,11 @@ core_params_exact = get_core_params(**kwargs_core_exact)
 core_params_learned = get_core_params(**kwargs_core_learned)
 sim_params = get_sim_params(**kwargs_sim)
 n_data = n_runs * outer_steps_train
-training_params_list = [get_training_params(n_data, **kwargs_train_FV, learning_rate = lr) for lr in learning_rate_list]
 model_params = get_model_params(**kwargs_model)
 sim_exact = EulerFVSim(core_params_exact, sim_params)
 model = get_model(core_params_learned, model_params)
 
 
-"""
 # ### Test Initial Conditions
 
 # In[ ]:
@@ -207,8 +207,8 @@ nx = 100
 key_test = jax.random.PRNGKey(31)
 f_init = f_init_sum_of_amplitudes(core_params_exact, key_test, **kwargs_init)
 a0 = get_a0(f_init, core_params_exact, nx)
-t_inner = 0.25
-outer_steps = 5
+t_inner = 0.02
+outer_steps = 10
 
 inner_fn = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
 trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
@@ -222,7 +222,7 @@ maxs = [4.0, 2.0, 3.0]
 mins = [-0.05, -2.0, -0.05]
 #plot_a(a0, core_params, maxs=maxs, mins=mins)
 plot_trajectory(trajectory, core_params_exact, maxs=maxs, mins=mins)
-"""
+
 
 # ### Save Training Data
 
@@ -243,6 +243,15 @@ save_training_data(key_data, init_fn, core_params_exact, sim_params, sim_exact, 
 i_params = init_params(key_init_params, model)
 
 
+# In[ ]:
+
+
+def training_params(nx):
+    UPSAMPLE = nx_exact // nx
+    batch_size = BASEBATCHSIZE * UPSAMPLE
+    return get_training_params(n_data, **kwargs_train_FV, batch_size=batch_size, learning_rate = learning_rate)
+
+
 # Next, we run a training loop for each value of nx. The learning rate undergoes a prespecified decay.
 
 # In[ ]:
@@ -250,26 +259,26 @@ i_params = init_params(key_init_params, model)
 
 for i, nx in enumerate(nxs):
     print(nx)
-    training_params = training_params_list[i]
-    idx_fn = lambda key: get_idx_gen(key, training_params)
-    batch_fn = get_batch_fn(core_params_learned, sim_params, training_params, nx)
+    idx_fn = lambda key: get_idx_gen(key, training_params(nx))
+    batch_fn = get_batch_fn(core_params_learned, sim_params, training_params(nx), nx)
     loss_fn = get_loss_fn(model, core_params_learned)
-    losses, params = train_model(model, i_params, training_params, key_train, idx_fn, batch_fn, loss_fn)
-    save_training_params(nx, sim_params, training_params, params, losses)
+    losses, params = train_model(model, i_params, training_params(nx), key_train, idx_fn, batch_fn, loss_fn)
+    save_training_params(nx, sim_params, training_params(nx), params, losses)
 
 
 # Next, we load and plot the losses for each nx to check that the simulation trained properly.
 
 # In[ ]:
 
-"""
+
 for i, nx in enumerate(nxs):
-    losses, _ = load_training_params(nx, sim_params, training_params_list[i], model)
+    losses, _ = load_training_params(nx, sim_params, training_params(nx), model)
     plt.plot(losses, label=nx)
     print(losses)
-#plt.ylim([0,1])
+plt.ylim([0,25])
 plt.legend()
 plt.show()
+
 
 # Next, we plot the accuracy of the trained model on a few simple test cases to qualitatively evaluate the success of the training. We will eventually quantify the accuracy of the trained model.
 
@@ -278,16 +287,16 @@ plt.show()
 
 key_plot_eval = jax.random.PRNGKey(18)
 
-for i, nx in enumerate(nxs):
+for i, nx in enumerate([64]):
     print("nx is {}".format(nx))
     
-    _, params = load_training_params(nx, sim_params, training_params_list[i], model)
+    _, params = load_training_params(nx, sim_params, training_params(nx), model)
     
     f_init = f_init_sum_of_amplitudes(core_params_exact, key_plot_eval, **kwargs_init)
     a0 = get_a0(f_init, core_params_exact, nx)
     a0_exact = get_a0(f_init, core_params_exact, nx_exact)
-    t_inner = 0.04
-    outer_steps = 10
+    t_inner = 0.06666667
+    outer_steps = 4
     
     # exact trajectory
     
@@ -308,34 +317,40 @@ for i, nx in enumerate(nxs):
     trajectory_fn_model = get_trajectory_fn(inner_fn_model, outer_steps)
     trajectory_model = trajectory_fn_model(a0)
     
-    print("trajectory model is")
-    print(trajectory_model)
     
-    
-    # with global stabilization
-    sim_model_gs = EulerFVSim(core_params, sim_params, global_stabilization=True, model=model, params=params)
+    # params with invariant preserving
+    sim_model_gs = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving=True)
     inner_fn_model_gs = get_inner_fn(sim_model_gs.step_fn, sim_model_gs.dt_fn, t_inner)
     trajectory_fn_model_gs = get_trajectory_fn(inner_fn_model_gs, outer_steps)
     trajectory_model_gs = trajectory_fn_model_gs(a0)
-    #plot_fv_trajectory(trajectory_model, core_params, t_inner, color = plot_colors[i])
-    
     
     maxs = [4.0, 2.0, 3.0]
     mins = [-0.05, -2.0, -0.05]
+    
+    """
     print("Exact")
     plot_trajectory(trajectory_exact_ds, core_params_exact, mins=mins, maxs=maxs)
     plt.show()
+    
     print("MUSCL")
     plot_trajectory(trajectory_characteristic, core_params_exact, mins=mins, maxs=maxs)
     plt.show()
+    """
+    
     print("model")
     plot_trajectory(trajectory_model, core_params_exact, mins=mins, maxs=maxs)
     plt.show()
     
+    print("positive model")
+    plot_trajectory(trajectory_model_gs, core_params_exact, mins=mins, maxs=maxs)
+    plt.show()
     
-    plt.plot(entropy_trajectory(trajectory_exact_ds, core_params_exact))
-    plt.plot(entropy_trajectory(trajectory_characteristic, core_params_exact))
-    plt.plot(entropy_trajectory(trajectory_model, core_params_learned))
+    
+    plt.plot(entropy_trajectory(trajectory_exact_ds, core_params_exact), label="Exact")
+    plt.plot(entropy_trajectory(trajectory_characteristic, core_params_exact), label="MUSCL")
+    plt.plot(entropy_trajectory(trajectory_model, core_params_learned), label="Model")
+    plt.plot(entropy_trajectory(trajectory_model_gs, core_params_learned), label="Invariant-Preserving", linestyle='dotted')
+    plt.legend()
     plt.show()
 
 
@@ -589,7 +604,7 @@ plt.show()
 # In[ ]:
 
 
-"""
+
 
 
 # In[ ]:
