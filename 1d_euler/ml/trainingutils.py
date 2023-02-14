@@ -134,7 +134,7 @@ def get_batch_fn(core_params, sim_params, training_params, nx):
 	return batch_fn
 
 
-def get_loss_fn(model, core_params, regularization = 0.1):    
+def get_loss_fn(model, core_params, regularization = 0.0): 
 
 	dadt_fn = lambda a, params: time_derivative_FV_1D_euler(core_params, model=model, params=params)(a)
 
