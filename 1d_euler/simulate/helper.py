@@ -175,6 +175,10 @@ def convert_FV_representation(a, nx_new, Lx):
 	dx_old = Lx / nx_old
 	dx_new = Lx / nx_new
 
+	if nx_old % nx_new == 0 and nx_old >= nx_new:
+		return jnp.mean(a.reshape(3, nx_new, nx_old // nx_new) , axis=-1)
+
+
 	def convert_repr(a):
 
 		def f_old(x, t):
