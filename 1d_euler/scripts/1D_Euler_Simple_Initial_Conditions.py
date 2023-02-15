@@ -157,8 +157,8 @@ flux_learned = 'learned'
 n_runs = 1000
 t_inner_train = 0.01
 Tf = 0.2
-sim_id = "euler_test"
 BC = 'ghost'
+sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
 DEPTH=4
 
@@ -206,12 +206,50 @@ def training_params(nx):
     return get_training_params(n_data, **kwargs_train_FV, num_epochs = num_epochs, batch_size=batch_size, learning_rate = learning_rate)
 
 
+# ### Test Initial Conditions
 
-init_fn = lambda key: f_init_sum_of_amplitudes(core_params_exact, key_data, **kwargs_init)
+# In[ ]:
+
+
+nx = 100
+key_test = jax.random.PRNGKey(4)
+f_init = f_init_sum_of_amplitudes(core_params_exact, key_test, **kwargs_init)
+a0 = get_a0(f_init, core_params_exact, nx)
+t_inner = 0.02
+outer_steps = 10
+
+inner_fn = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
+trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
+trajectory = trajectory_fn(a0)
+maxs = [4.0, 2.0, 3.0]
+mins = [-0.05, -2.0, -0.05]
+#plot_a(a0, core_params, maxs=maxs, mins=mins)
+plot_trajectory(trajectory, core_params_exact, maxs=maxs, mins=mins)
+
+
+# ### Save Training Data
+
+# In[ ]:
+
+
+init_fn = lambda key: f_init_sum_of_amplitudes(core_params_exact, key, **kwargs_init)
 save_training_data(key_data, init_fn, core_params_exact, sim_params, sim_exact, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs)
 
 
+# ### Train
+
+# Next, we initialize the model parameters.
+
+# In[ ]:
+
+
 i_params = init_params(key_init_params, model)
+
+
+# Next, we run a training loop for each value of nx. The learning rate undergoes a prespecified decay.
+
+# In[ ]:
+
 
 for i, nx in enumerate(nxs):
     print(nx)
@@ -222,9 +260,102 @@ for i, nx in enumerate(nxs):
     save_training_params(nx, sim_params, training_params(nx), params, losses)
 
 
+# Next, we load and plot the losses for each nx to check that the simulation trained properly.
+
+# In[ ]:
 
 
-N_test = 50
+for nx in (nxs):
+    losses, _ = load_training_params(nx, sim_params, training_params(nx), model)
+    plt.plot(losses, label=nx)
+    print("nx = {}, losses={}".format(nx, losses))
+plt.ylim([0,0.02])
+plt.legend()
+plt.show()
+
+
+# Next, we plot the accuracy of the trained model on a few simple test cases to qualitatively evaluate the success of the training. We will eventually quantify the accuracy of the trained model.
+
+# In[ ]:
+
+
+key_plot_eval = jax.random.PRNGKey(6)
+
+kwargs_sim_low_cfl = {'name' : sim_id, 'cfl_safety' : 0.3, 'rk' : 'ssp_rk3'}
+sim_params_low_cfl = get_sim_params(**kwargs_sim_low_cfl)
+
+for i, nx in enumerate(nxs):
+    print("nx is {}".format(nx))
+    
+    _, params = load_training_params(nx, sim_params, training_params(nx), model)
+    
+    f_init = f_init_sum_of_amplitudes(core_params_exact, key_plot_eval, **kwargs_init)
+    a0 = get_a0(f_init, core_params_exact, nx)
+    a0_exact = get_a0(f_init, core_params_exact, nx_exact)
+    t_inner = 0.06666667
+    outer_steps = 4
+    
+    # exact trajectory
+    
+    sim_exact = EulerFVSim(core_params_exact, sim_params)
+    inner_fn_exact = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
+    trajectory_fn_exact = get_trajectory_fn(inner_fn_exact, outer_steps)
+    trajectory_exact = trajectory_fn_exact(a0_exact)
+    trajectory_exact_ds = vmap(convert_FV_representation, (0, None, None))(trajectory_exact, nx, core_params_exact.Lx)
+    
+    
+    # characteristic flux
+    trajectory_characteristic = trajectory_fn_exact(a0)
+    
+    
+    sim_model = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving = False)
+    inner_fn_model = get_inner_fn(sim_model.step_fn, sim_model.dt_fn, t_inner)
+    trajectory_fn_model = get_trajectory_fn(inner_fn_model, outer_steps)
+    trajectory_model = trajectory_fn_model(a0)
+    
+    
+    # params with invariant preserving
+    sim_model_gs = EulerFVSim(core_params_learned, sim_params_low_cfl, model=model, params=params, invariant_preserving=True)
+    inner_fn_model_gs = get_inner_fn(sim_model_gs.step_fn, sim_model_gs.dt_fn, t_inner)
+    trajectory_fn_model_gs = get_trajectory_fn(inner_fn_model_gs, outer_steps)
+    trajectory_model_gs = trajectory_fn_model_gs(a0)
+    
+    maxs = [4.0, 2.0, 3.0]
+    mins = [-0.05, -2.0, -0.05]
+    
+    
+    print("Exact")
+    plot_trajectory(trajectory_exact_ds, core_params_exact, mins=mins, maxs=maxs)
+    plt.show()
+    
+    print("MUSCL")
+    plot_trajectory(trajectory_characteristic, core_params_exact, mins=mins, maxs=maxs)
+    plt.show()
+    
+    
+    print("ML")
+    plot_trajectory(trajectory_model, core_params_exact, mins=mins, maxs=maxs)
+    plt.show()
+    
+    print("Invariant-preserving ML")
+    plot_trajectory(trajectory_model_gs, core_params_exact, mins=mins, maxs=maxs)
+    plt.show()
+    
+    
+    plt.plot(entropy_trajectory(trajectory_exact_ds, core_params_exact), label="Exact")
+    plt.plot(entropy_trajectory(trajectory_characteristic, core_params_exact), label="MUSCL")
+    plt.plot(entropy_trajectory(trajectory_model, core_params_learned), label="Model")
+    plt.plot(entropy_trajectory(trajectory_model_gs, core_params_learned), label="Invariant-Preserving", linestyle='dotted')
+    plt.legend()
+    plt.show()
+
+
+# ### Plot Accuracy vs nx
+
+# In[ ]:
+
+
+N_test = 5 # 50
 
 key = jax.random.PRNGKey(45)
 
@@ -293,3 +424,63 @@ for n in range(N_test):
 
 with open('mses_simple.npy', 'wb') as f:
     onp.save(f, errors)
+
+
+# In[ ]:
+
+
+mses = onp.load('mses_simple.npy', allow_pickle=True)
+
+print(mses)
+
+
+# In[ ]:
+
+
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import matplotlib.lines as mlines
+
+
+fig, axs = plt.subplots(1, 1, figsize=(7, 3.25))
+axs.spines['top'].set_visible(False)
+axs.spines['right'].set_visible(False)
+linewidth = 3
+
+labels = ["MUSCL", "ML", "ML (Stabilized)"]
+colors = ["blue", "red", "green", "green"]
+linestyles = ["solid", "solid", "dashed", "solid"]
+
+for k in range(3):
+    plt.loglog(nxs, mses[:,k], label = labels[k], color=colors[k], linewidth=linewidth, linestyle=linestyles[k])
+
+axs.set_xticks(list(reversed(nxs)))
+axs.set_xticklabels(["N=32", "N=16", "N=8", "N=4"], fontsize=18)
+axs.set_yticks([1e-3, 1e-2, 1e-1, 1e0])
+axs.set_yticklabels(["$10^{-3}$", "$10^{-2}$", "$10^{-1}$", "$10^0$"], fontsize=18)
+axs.minorticks_off()
+axs.set_ylabel("Normalized MSE", fontsize=18)
+axs.text(0.3, 0.95, '$t=1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
+
+
+handles = []
+for k in range(3):
+    handles.append(
+        mlines.Line2D(
+            [],
+            [],
+            color=colors[k],
+            linewidth=linewidth,
+            label=labels[k],
+            linestyle=linestyles[k]
+        )
+    )
+axs.legend(handles=handles,loc=(0.655,0.45) , prop={'size': 15}, frameon=False)
+plt.ylim([2.5e-4, 1e0+1e-1])
+fig.tight_layout()
+
+
+#plt.savefig('mse_vs_nx_euler.png')
+#plt.savefig('mse_vs_nx_euler.eps')
+plt.show()
+
