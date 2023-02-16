@@ -4,7 +4,7 @@ from jax import vmap
 
 from flux import Flux
 from boundaryconditions import BoundaryCondition
-from helper import get_p, get_u, get_H, get_c, get_w, has_negative
+from helper import get_p, get_u, get_H, get_c, get_w, has_negative, get_u_from_w, _fixed_quad, get_entropy_flux
 from model import model_flux_FV_1D_euler
 
 from jax import config
@@ -274,6 +274,14 @@ def flux_musclcharacteristic_periodic(a, core_params):
 	return F_R
 
 
+def flux_ep_ghost(a, core_params):
+	a = jnp.pad(a, ((0,0), (1,1)), mode='edge')
+	flux_ep = entropy_preserving_flux_ghost(a, core_params)
+	flux_ep = flux_ep.at[:,0].set(f_j(a[:,0], core_params))
+	flux_ep = flux_ep.at[:,-1].set(f_j(a[:,-1], core_params))
+	return flux_ep
+
+
 def flux_learned_periodic(a, core_params, model = None, params = None):
 	return model_flux_FV_1D_euler(a, model, params)
 
@@ -325,11 +333,13 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 	elif core_params.flux == Flux.RUSANOV:
 		flux_fn = flux_rusanov
 		flux_term = lambda a: flux_ghost(a, core_params, flux_fn)
+	elif core_params.flux == Flux.EP:
+		flux_term = lambda a: flux_ep_ghost(a, core_params)
 	elif core_params.flux == Flux.LEARNED:
 		def flux_term(a):
 			flux_right = flux_musclcharacteristic_ghost(a, core_params)
 			delta_flux_right = flux_learned_ghost(a, core_params, model = model, params = params)
-			return flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
+			return flux_right + delta_flux_right #flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
 	else:
 		raise NotImplementedError
 
@@ -509,6 +519,40 @@ def entropy_increase_periodic(a, flux_right, core_params):
 	denom = jnp.sum(G_R * diff_w)
 	return flux_right - jnp.nan_to_num((deta_dt_old < 0.0) * deta_dt_old * G_R / denom)
 
+
+
+def entropy_preserving_flux_ghost(a, core_params):
+
+    w = get_w(a, core_params)
+
+    nx = a.shape[1]
+
+    w_j = w[:, :-1]
+    w_j_plus_one = w[:, 1:]
+
+    def w_hat(w_j, w_j_plus_one, theta):
+        return w_j + theta * (w_j_plus_one - w_j)
+
+    def flux_w(w):
+        a = get_u_from_w(w, core_params)
+        return f_j(a, core_params)
+
+    def f_to_integrate(w_j, w_j_plus_one, theta):
+        return flux_w(w_hat(w_j, w_j_plus_one, theta))
+    
+    
+    def integrate(w_j, w_j_plus_one):
+        
+        def foo(theta):
+            return f_to_integrate(w_j, w_j_plus_one, theta)
+
+        return _fixed_quad(vmap(foo, (0), (1)), 0.0, 1.0, n=8)
+    
+    return vmap(integrate, (1, 1), (1))(w_j, w_j_plus_one)
+    
+
+
+
 def entropy_increase_ghost(a, flux_right, core_params):
 
 	def G_primitive_ghost(a, core_params):
@@ -516,15 +560,16 @@ def entropy_increase_ghost(a, flux_right, core_params):
 			rho = a[0]
 			zeros = jnp.zeros(rho.shape)
 			u = a[1] / a[0]
-			G = jnp.concatenate([rho[None], u[None], p[None]], axis=0)
+			G = jnp.concatenate([zeros[None], u[None], p[None]], axis=0)
 			return G[:,1:] - G[:,:-1]
 
 	G_R = G_primitive_ghost(a, core_params) # (3, nx-1)
 	w = get_w(a, core_params) # (3, nx)
 	diff_w = (w[:,1:] - w[:,:-1])
-	deta_dt_old = jnp.sum(flux_right[:,1:-1] * diff_w)
+	deta_dt_old = jnp.sum(flux_right[:,1:-1] * diff_w) + jnp.sum(flux_right[:,0] * w[:,0]) - jnp.sum(flux_right[:,-1] * w[:,-1])
+	deta_dt_new = get_entropy_flux(a[:, 0], core_params) - get_entropy_flux(a[:, -1], core_params)
 	denom = jnp.sum(G_R * diff_w)
-	flux_right = flux_right.at[:,1:-1].add(jnp.nan_to_num(-1 * (deta_dt_old < 0.0) * deta_dt_old * G_R / denom))
+	flux_right = flux_right.at[:,1:-1].add(jnp.nan_to_num((deta_dt_old < deta_dt_new) * (deta_dt_new - deta_dt_old) * G_R / denom))
 	return flux_right
 
 

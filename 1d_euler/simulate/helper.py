@@ -227,6 +227,12 @@ def get_entropy(a, core_params):
 	gamma = core_params.gamma
 	return rho * (p / rho**gamma)**(1/(1+gamma))
 
+def get_entropy_flux(a, core_params):
+	p = get_p(a, core_params)
+	rhov = a[1]
+	rho = a[0]
+	gamma = core_params.gamma
+	return rhov * (p / rho**gamma)**(1/(1+gamma))
 
 def get_w(a, core_params):
 	p = get_p(a, core_params)
@@ -236,6 +242,14 @@ def get_w(a, core_params):
 	E = a[2]
 	p_star = (gamma - 1) / (gamma + 1) * (p / rho**gamma) ** (1/(1+gamma))
 	return p_star / p * jnp.asarray([E, -rhou, rho])
+
+def get_u_from_w(w, core_params):
+	gamma = core_params.gamma
+
+	p_star = w[0] * (gamma - 1) - 0.5 * w[1]**2 / w[2]
+	p = (w[2]**gamma / p_star**gamma * (p_star * (gamma + 1) / (gamma - 1))**(gamma - 1))**(1/(1-gamma)) 
+
+	return p / p_star * jnp.asarray([w[2], -w[1], w[0]])
 
 def has_negative(a, core_params):
 	p = get_p(a, core_params)

@@ -8,6 +8,7 @@ class Flux(Enum):
     MUSCLCONSERVED = 'musclconserved'
     MUSCLPRIMITIVE = 'musclprimitive'
     MUSCLCHARACTERISTIC = 'musclcharacteristic'
+    EP = 'ep'
     LEARNED = 'learned'
 
     def __str__(self):
