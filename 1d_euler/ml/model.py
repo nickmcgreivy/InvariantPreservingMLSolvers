@@ -149,7 +149,7 @@ class CNNPeriodic1D(nn.Module):
 			kernel_size=(self.kernel_out,),
 			padding="VALID",
 			dtype=dtype,
-			kernel_init=kernel_init,
+			kernel_init=zeros_init,
 			bias_init=bias_init,
 		)
 
@@ -215,7 +215,7 @@ class CNNGhost1D(nn.Module):
 			kernel_size=(self.kernel_out,),
 			padding="VALID",
 			dtype=dtype,
-			kernel_init=kernel_init,
+			kernel_init=zeros_init,
 			bias_init=bias_init,
 		)
 

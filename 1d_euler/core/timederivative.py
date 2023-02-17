@@ -339,7 +339,7 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 		def flux_term(a):
 			flux_right = flux_musclcharacteristic_ghost(a, core_params)
 			delta_flux_right = flux_learned_ghost(a, core_params, model = model, params = params)
-			return flux_right + delta_flux_right #flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
+			return flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
 	else:
 		raise NotImplementedError
 
