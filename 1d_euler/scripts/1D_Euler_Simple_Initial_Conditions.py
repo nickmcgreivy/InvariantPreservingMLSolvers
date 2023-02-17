@@ -6,6 +6,12 @@
 # In[ ]:
 
 
+
+
+
+# In[ ]:
+
+
 # setup paths
 import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
@@ -96,6 +102,7 @@ def plot_trajectory(trajectory, core_params, mins = [0.0 - 2e-2] * 3, maxs= [1.0
     nx = trajectory.shape[2]
     xs = jnp.arange(nx) * core_params.Lx / nx
     xs = xs.T.reshape(-1)
+    outer_steps = trajectory.shape[0]
     coords = {
         'x': xs,
         'time': t_inner * jnp.arange(outer_steps)
@@ -154,15 +161,15 @@ gamma = 1.4
 
 flux_exact = 'musclcharacteristic'
 flux_learned = 'learned'
-n_runs = 1000
+n_runs = 10000
 t_inner_train = 0.01
 Tf = 0.2
 BC = 'ghost'
 sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
-DEPTH=4
+DEPTH=5
 
-nxs = [4, 8, 16, 32]
+nxs = [8, 16, 32, 64]
 nx_exact = 256
 
 key_data = jax.random.PRNGKey(13)
@@ -171,8 +178,8 @@ key_init_params = jax.random.PRNGKey(31)
 
 BASEBATCHSIZE = 64
 WIDTH = 32
-learning_rate = 1e-3
-NUM_TRAINING_ITERATIONS = 40000
+learning_rate = 1e-4
+NUM_TRAINING_ITERATIONS = 200000
 
 ###### END HYPERPARAMS
 
@@ -269,7 +276,7 @@ for nx in (nxs):
     losses, _ = load_training_params(nx, sim_params, training_params(nx), model)
     plt.plot(losses, label=nx)
     print("nx = {}, losses={}".format(nx, losses))
-plt.ylim([0,0.02])
+plt.ylim([0,1.0])
 plt.legend()
 plt.show()
 
@@ -279,7 +286,8 @@ plt.show()
 # In[ ]:
 
 
-key_plot_eval = jax.random.PRNGKey(6)
+key_plot_eval = jax.random.PRNGKey(15)
+
 
 kwargs_sim_low_cfl = {'name' : sim_id, 'cfl_safety' : 0.3, 'rk' : 'ssp_rk3'}
 sim_params_low_cfl = get_sim_params(**kwargs_sim_low_cfl)
@@ -292,8 +300,9 @@ for i, nx in enumerate(nxs):
     f_init = f_init_sum_of_amplitudes(core_params_exact, key_plot_eval, **kwargs_init)
     a0 = get_a0(f_init, core_params_exact, nx)
     a0_exact = get_a0(f_init, core_params_exact, nx_exact)
-    t_inner = 0.06666667
-    outer_steps = 4
+    UP = 1000
+    t_inner = 0.05 / UP
+    outer_steps = 3 * UP
     
     # exact trajectory
     
@@ -325,20 +334,20 @@ for i, nx in enumerate(nxs):
     
     
     print("Exact")
-    plot_trajectory(trajectory_exact_ds, core_params_exact, mins=mins, maxs=maxs)
+    plot_trajectory(trajectory_exact_ds[::UP], core_params_exact, mins=mins, maxs=maxs)
     plt.show()
     
     print("MUSCL")
-    plot_trajectory(trajectory_characteristic, core_params_exact, mins=mins, maxs=maxs)
+    plot_trajectory(trajectory_characteristic[::UP], core_params_exact, mins=mins, maxs=maxs)
     plt.show()
     
     
     print("ML")
-    plot_trajectory(trajectory_model, core_params_exact, mins=mins, maxs=maxs)
+    plot_trajectory(trajectory_model[::UP], core_params_exact, mins=mins, maxs=maxs)
     plt.show()
     
     print("Invariant-preserving ML")
-    plot_trajectory(trajectory_model_gs, core_params_exact, mins=mins, maxs=maxs)
+    plot_trajectory(trajectory_model_gs[::UP], core_params_exact, mins=mins, maxs=maxs)
     plt.show()
     
     
@@ -355,12 +364,12 @@ for i, nx in enumerate(nxs):
 # In[ ]:
 
 
-N_test = 5 # 50
+N_test = 100
 
 key = jax.random.PRNGKey(45)
 
 t_inner = 0.01
-outer_steps = 21
+outer_steps = 11
     
 # exact trajectory setup
 sim_exact = EulerFVSim(core_params_exact, sim_params)
@@ -369,8 +378,8 @@ trajectory_fn_exact = jit(get_trajectory_fn(inner_fn_exact, outer_steps))
 
 convert_trajectory_fn = vmap(convert_FV_representation, (0, None, None))
 
-def MSE_trajectory(traj, traj_ex):
-    return jnp.mean((traj - traj_ex)**2)
+def RMSE_trajectory(traj, traj_ex):
+    return jnp.sqrt(jnp.mean((traj - traj_ex)**2))
 
 # trajectory setup
 
@@ -382,6 +391,8 @@ def get_trajectory_ML(a0, params, invariant_preserving=False):
     return trajectory_fn_model(a0)
 
 errors = onp.zeros((len(nxs), 3))
+
+num_not_nan = onp.zeros(len(nxs))
 
 for n in range(N_test):
     
@@ -414,9 +425,17 @@ for n in range(N_test):
         # Invariant-preserving ML trajectory
         trajectory_invariant_ML = get_trajectory_ML(a0, params, invariant_preserving=True)
         
-        errors[i, 0] += MSE_trajectory(trajectory_muscl, trajectory_exact_ds) / N_test
-        errors[i, 1] += MSE_trajectory(trajectory_ML, trajectory_exact_ds) / N_test
-        errors[i, 2] += MSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds) / N_test
+        error_muscl = RMSE_trajectory(trajectory_muscl, trajectory_exact_ds)
+        error_ml = RMSE_trajectory(trajectory_ML, trajectory_exact_ds)
+        error_ml_gs = RMSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
+        if not np.isnan(error_ml):
+            errors[i, 0] += error_muscl
+            errors[i, 1] += error_ml
+            errors[i, 2] += error_ml_gs
+            num_not_nan[i] += 1
+    
+errors = errors / num_not_nan[:, None]
+print("number nan: {}".format(N_test - num_not_nan))
 
 
 # In[ ]:
@@ -429,8 +448,8 @@ with open('mses_simple.npy', 'wb') as f:
 # In[ ]:
 
 
-mses = onp.load('mses_simple.npy', allow_pickle=True)
-
+mses = onp.load('mses_simple_ghost.npy')
+mses = onp.nan_to_num(mses, nan=1e5)
 print(mses)
 
 
@@ -455,12 +474,12 @@ for k in range(3):
     plt.loglog(nxs, mses[:,k], label = labels[k], color=colors[k], linewidth=linewidth, linestyle=linestyles[k])
 
 axs.set_xticks(list(reversed(nxs)))
-axs.set_xticklabels(["N=32", "N=16", "N=8", "N=4"], fontsize=18)
-axs.set_yticks([1e-3, 1e-2, 1e-1, 1e0])
-axs.set_yticklabels(["$10^{-3}$", "$10^{-2}$", "$10^{-1}$", "$10^0$"], fontsize=18)
+axs.set_xticklabels(["N=64", "N=32", "N=16", "N=8"], fontsize=18)
+axs.set_yticks([1e-4, 1e-3, 1e-2])
+axs.set_yticklabels(["$10^{-4}$", "$10^{-3}$", "$10^{-2}$",], fontsize=18)
 axs.minorticks_off()
 axs.set_ylabel("Normalized MSE", fontsize=18)
-axs.text(0.3, 0.95, '$t=1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
+axs.text(0.2, 0.95, '$t=0.1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
 
 
 handles = []
@@ -475,12 +494,18 @@ for k in range(3):
             linestyle=linestyles[k]
         )
     )
-axs.legend(handles=handles,loc=(0.655,0.45) , prop={'size': 15}, frameon=False)
-plt.ylim([2.5e-4, 1e0+1e-1])
+axs.legend(handles=handles,loc=(0.45,0.55) , prop={'size': 15}, frameon=False)
+plt.ylim([1e-5, 1e-1+1e-2])
 fig.tight_layout()
 
 
 #plt.savefig('mse_vs_nx_euler.png')
 #plt.savefig('mse_vs_nx_euler.eps')
 plt.show()
+
+
+# In[ ]:
+
+
+
 
