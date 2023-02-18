@@ -150,7 +150,7 @@ def _2d_fixed_quad(f, xi, xf, yi, yf, n=3):
     x_i = (xf + xi) / 2 + (xf - xi) / 2 * xi_x
     y_i = (yf + yi) / 2 + (yf - yi) / 2 * xi_y
     wprime = w_2d * (xf - xi) * (yf - yi) / 4
-    return np.sum(wprime[None, :] * f(x_i, y_i), axis=1)
+    return np.sum(wprime * f(x_i, y_i))
 
 
 def evalf_2D(x, y, a, dx, dy, order):
@@ -251,12 +251,14 @@ def integrate_fn_fv(sim_params, func, quad_func=_2d_fixed_quad, n=5):
     y_i = sim_params.dy * j
     y_f = sim_params.dy * (j + 1)
 
+
+    denom = sim_params.dx * sim_params.dy
     quad_lambda = lambda f, xi, xf, yi, yf: quad_func(f, xi, xf, yi, yf, n=n)
 
     _vmap_integrate = vmap(
         vmap(quad_lambda, (None, 0, 0, None, None), 0), (None, None, None, 0, 0), 1
     )
-    return _vmap_integrate(func, x_i, x_f, y_i, y_f)[...,0]
+    return _vmap_integrate(func, x_i, x_f, y_i, y_f)[...,0] / denom
 
 
 def f_to_DG(sim_params, func, quad_func=_2d_fixed_quad, n=8):
@@ -325,7 +327,7 @@ def convert_FV_representation(zeta, sim_params, n=8):
         def f_high(x, y):
             return _evalf_2D_integrate(x, y, zeta[:,:, None], dx_high, dy_high, 0)
 
-        return integrate_fn_fv(sim_params, f_high, n=n) /  (sim_params.dx * sim_params.dy)
+        return integrate_fn_fv(sim_params, f_high, n=n)
 
     return convert_repr(zeta)
 
