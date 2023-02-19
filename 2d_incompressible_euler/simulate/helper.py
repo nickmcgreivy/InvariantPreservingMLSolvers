@@ -258,7 +258,7 @@ def integrate_fn_fv(sim_params, func, quad_func=_2d_fixed_quad, n=5):
     _vmap_integrate = vmap(
         vmap(quad_lambda, (None, 0, 0, None, None), 0), (None, None, None, 0, 0), 1
     )
-    return _vmap_integrate(func, x_i, x_f, y_i, y_f)[...,0] / denom
+    return _vmap_integrate(func, x_i, x_f, y_i, y_f) / denom
 
 
 def f_to_DG(sim_params, func, quad_func=_2d_fixed_quad, n=8):
