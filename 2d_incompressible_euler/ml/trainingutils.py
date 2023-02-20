@@ -61,8 +61,10 @@ def write_trajectory(sim_params, vorticity, dadt_diff, alpha_R, alpha_T, n, oute
     f["alpha_T"][j_begin:j_end] = alpha_T
     f.close()
 
-def save_training_data(key, sim_params_exact, simulation_exact, t_inner, outer_steps, n_runs, sim_params_ds, simulation_ds, max_velocity=7.0, ic_wavenumber=2):
+def save_training_data(key, sim_params_exact, simulation_exact, t_burn_in, t_inner, outer_steps, n_runs, sim_params_ds, simulation_ds, max_velocity=7.0, ic_wavenumber=2):
     inner_fn = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_inner)
+    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in)
+    rollout_burnin_fn = jax.jit(get_trajectory_fn(inner_fn_burnin, 1, start_with_input = False))
     rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
     time_derivative_fn = jax.vmap(jax.jit(simulation_exact.F))
 
@@ -72,7 +74,8 @@ def save_training_data(key, sim_params_exact, simulation_exact, t_inner, outer_s
         print(n)
         key, subkey = jax.random.split(key)
         v0 = init_fn_jax_cfd(subkey, sim_params_exact, max_velocity, ic_wavenumber)
-        vorticity_trajectory = rollout_fn(v0)
+        v_burnin = rollout_burnin_fn(v0)[0]
+        vorticity_trajectory = rollout_fn(v_burnin)
         dadt_trajectory = time_derivative_fn(vorticity_trajectory)
 
         for j, sim_params in enumerate(sim_params_ds):
