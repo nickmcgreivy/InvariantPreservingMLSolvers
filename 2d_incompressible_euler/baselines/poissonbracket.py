@@ -45,19 +45,6 @@ def load_alpha_top_matrix_twice(basedir, order):
     return T
 
 
-def globally_stabilize(flux_R, flux_T, zeta, sim_params):
-    diff_R = jnp.roll(zeta, -1, axis=0) - zeta
-    diff_T = jnp.roll(zeta, -1, axis=1) - zeta
-    dl2dt_tot = sim_params.dy * jnp.sum(flux_R * diff_R) + sim_params.dx * jnp.sum(flux_T * diff_T)
-    denom_R = sim_params.dy * jnp.sum(diff_R**2)
-    denom_T = sim_params.dx * jnp.sum(diff_T**2)
-    epsilon = 1e-6 / 2
-    half = 0.5 + epsilon
-    flux_R = flux_R - (dl2dt_tot > 0.0) * (half * dl2dt_tot / denom_R) * diff_R
-    flux_T = flux_T - (dl2dt_tot > 0.0) * (half * dl2dt_tot / denom_T) * diff_T
-    return flux_R, flux_T
-
-
 def get_poisson_bracket_fn_fv(sim_params):
     basedir = sim_params.basedir
     flux = sim_params.flux
@@ -130,12 +117,8 @@ def get_poisson_bracket_fn_fv(sim_params):
             flux_R = flux_R + delta_flux_R
             flux_T = flux_T + delta_flux_T
 
-        if sim_params.global_stabilization:
-            flux_R, flux_T = globally_stabilize(flux_R, flux_T, zeta, sim_params)
-
         flux_L = jnp.roll(flux_R, 1, axis=0)
         flux_B = jnp.roll(flux_T, 1, axis=1)
-
         return flux_L + flux_B - flux_R - flux_T
 
     return poisson_bracket
