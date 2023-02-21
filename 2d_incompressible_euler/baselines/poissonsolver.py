@@ -349,7 +349,7 @@ def get_poisson_solve_fn_fv(sim_params):
 
     tol = 1e-10
     V = sparse.csr_matrix.todense(sV)[1:, 1:]
-    data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements-1)
+    data, indices, indptr = jsparse.csr_fromdense(V, nse=np.count_nonzero(V))
     jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
     platform = xla_bridge.get_backend().platform
     zero_array = jnp.asarray([0.0])
