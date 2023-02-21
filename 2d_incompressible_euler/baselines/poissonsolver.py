@@ -287,7 +287,7 @@ def load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, num_global_elements):
             "{}/data/poissonmatrices/volume_{}_{}_{}.npz".format(basedir, nx, ny, order)
         )
     else:
-        V = create_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, num_global_elements)[:, 1:]
+        V = create_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, num_global_elements)
         sV = sparse.csr_matrix(V)
         sparse.save_npz(
             "{}/data/poissonmatrices/volume_{}_{}_{}.npz".format(
@@ -341,24 +341,18 @@ def get_poisson_solve_fn_fv(sim_params):
     K = get_kernel(order) @ S_elem
 
 
-    experimental = True
 
-    if experimental:
-        sV = load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, N_global_elements)
-        V_sp = jsparse.BCOO.from_scipy_sparse(sV)
-        args = V_sp.data, V_sp.indices, N_global_elements
-        kwargs = {"forward": True}
-        custom_lu_solve = lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
-    else:
-        sV = load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, N_global_elements)
-        V_sp = jsparse.BCOO.from_scipy_sparse(sV)
-        args = V_sp.data, V_sp.indices, N_global_elements
-        kwargs = {"forward": True}
-        custom_lu_solve = lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
-        tol = 1e-10
-        V = sparse.csr_matrix.todense(sV)
-        data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements)
-        jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
+    sV = load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, N_global_elements)
+    V_sp = jsparse.BCOO.from_scipy_sparse(sV)
+    args = V_sp.data, V_sp.indices, N_global_elements
+    kwargs = {"forward": True}
+    custom_lu_solve = lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
+    tol = 1e-10
+    V = sparse.csr_matrix.todense(sV)
+    V = V - jnp.diag(jnp.ones(V.shape[0])) * jnp.mean(jnp.diag(V))
+    print(jnp.sum(jnp.diagonal(V)))
+    data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements)
+    jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
         
 
 
@@ -384,20 +378,9 @@ def get_poisson_solve_fn_fv(sim_params):
         )[0]
         b = -F_ijb[T[:, 0], T[:, 1], T[:, 2]]
 
-        if experimental:
-            #b = b - b[0]
-            #b = b[1:]
-            print(b.shape)
-            res = lu_solve(b)
-            print(res.shape)
-            #res = jnp.concatenate((jnp.asarray([0.0]), res), axis=0)
-            return res.at[M].get()
-        else:
-            print("b shape is {}".format(b.shape))
-            res = lu_solve(b)
-            print("res shape is {}".format(res.shape))
-            res = res - jnp.mean(res)
-            return res.at[M].get()
+        res = lu_solve(b)
+        res = res - jnp.mean(res)
+        return res.at[M].get()
 
 
     return solve
