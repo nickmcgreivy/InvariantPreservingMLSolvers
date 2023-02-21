@@ -35,6 +35,7 @@ import jax.numpy as jnp
 import jax
 from jax.experimental import sparse as jsparse
 from jax.experimental.sparse.linalg import spsolve
+from jax.lib import xla_bridge
 from scipy import sparse
 from scipy.sparse import dok_matrix
 from jax.scipy.linalg import lu_factor
@@ -349,6 +350,15 @@ def get_poisson_solve_fn_fv(sim_params):
     data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements)
     jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
 
+    platform = xla_bridge.get_backend().platform
+
+    if platform == 'cpu':
+        lu_solve = custom_lu_solve
+    elif platform == 'gpu':
+        lu_solve = jax_lu_solve
+    else:
+        raise Exception
+
     def solve(xi):
         xi = xi - jnp.mean(xi)
         xi = jnp.pad(xi, ((1, 0), (1, 0)), mode="wrap")
@@ -361,8 +371,7 @@ def get_poisson_solve_fn_fv(sim_params):
         )[0]
         b = -F_ijb[T[:, 0], T[:, 1], T[:, 2]]
 
-        res = custom_lu_solve(b)
-        #res = jax_lu_solve(b)
+        res = lu_solve(b)
         res = res - jnp.mean(res)
         output = res.at[M].get()
         return output
