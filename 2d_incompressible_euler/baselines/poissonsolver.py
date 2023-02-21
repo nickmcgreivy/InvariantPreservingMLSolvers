@@ -337,9 +337,7 @@ def get_poisson_solve_fn_fv(sim_params):
     N_global_elements, M, T = load_assembly_matrix(basedir, nx, ny, order)
     T = convert_to_bottom_indices(T, order)
     S_elem = load_elementwise_source(basedir, nx, ny, Lx, Ly, order)
-
     K = get_kernel(order) @ S_elem
-
 
 
     sV = load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, N_global_elements)
@@ -351,23 +349,30 @@ def get_poisson_solve_fn_fv(sim_params):
 
     tol = 1e-10
     V = sparse.csr_matrix.todense(sV)[1:, 1:]
-
-    data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements)
+    data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements-1)
     jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
-        
-
-
-
     platform = xla_bridge.get_backend().platform
+    zero_array = jnp.asarray([0.0])
+
 
     if platform == 'cpu':
         lu_solve = custom_lu_solve
+
+        def final_step(b):
+            res = lu_solve(b)
+            return res - jnp.mean(res)
+
     elif platform == 'gpu':
         lu_solve = jax_lu_solve
+
+        def final_step(b):
+            b = b[1:]
+            res = lu_solve(b)
+            res = jnp.concatenate((zero_array, res))
+            return res - jnp.mean(res)
+
     else:
         raise Exception
-
-    zero_array = jnp.asarray([0.0])
 
     def solve(xi):
         xi = xi - jnp.mean(xi)
@@ -380,13 +385,7 @@ def get_poisson_solve_fn_fv(sim_params):
             dimension_numbers=("NHWC", "HWOI", "NHWC"),
         )[0]
         b = -F_ijb[T[:, 0], T[:, 1], T[:, 2]]
-
-        b = b[1:]
-        res = lu_solve(b)
-
-        res = jnp.concatenate((zero_array, res))
-        res = res - jnp.mean(res)
+        res = final_step(b)
         return res.at[M].get()
-
 
     return solve
