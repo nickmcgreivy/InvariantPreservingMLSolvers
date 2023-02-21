@@ -347,10 +347,11 @@ def get_poisson_solve_fn_fv(sim_params):
     args = V_sp.data, V_sp.indices, N_global_elements
     kwargs = {"forward": True}
     custom_lu_solve = lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
+
+
     tol = 1e-10
-    V = sparse.csr_matrix.todense(sV)
-    V = V - jnp.diag(jnp.ones(V.shape[0])) * jnp.mean(jnp.diag(V))
-    print(jnp.sum(jnp.diagonal(V)))
+    V = sparse.csr_matrix.todense(sV)[1:, 1:]
+
     data, indices, indptr = jsparse.csr_fromdense(V, nse=N_global_elements)
     jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
         
@@ -366,6 +367,8 @@ def get_poisson_solve_fn_fv(sim_params):
     else:
         raise Exception
 
+    zero_array = jnp.asarray([0.0])
+
     def solve(xi):
         xi = xi - jnp.mean(xi)
         xi = jnp.pad(xi, ((1, 0), (1, 0)), mode="wrap")
@@ -378,7 +381,10 @@ def get_poisson_solve_fn_fv(sim_params):
         )[0]
         b = -F_ijb[T[:, 0], T[:, 1], T[:, 2]]
 
+        b = b[1:]
         res = lu_solve(b)
+
+        res = jnp.concatenate((zero_array, res))
         res = res - jnp.mean(res)
         return res.at[M].get()
 
