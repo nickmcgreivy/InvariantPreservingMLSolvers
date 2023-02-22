@@ -5,17 +5,18 @@
 
 
 import sys
-#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
-#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
-#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
-sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
-sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
-sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
+sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
+sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
+sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
+#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
+#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
+#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
 
 
 
 import jax
 import jax.numpy as jnp
+import numpy as onp
 from jax import config
 config.update("jax_enable_x64", True)
 import xarray
@@ -27,12 +28,12 @@ from simulations import KolmogorovFiniteVolumeSimulation
 from simparams import FiniteVolumeSimulationParams
 
 from helper import convert_FV_representation
-from trajectory import get_trajectory_fn
+from trajectory import get_trajectory_fn, get_inner_fn
 from flux import Flux
 
 from model import LearnedFlux2D
 from mlparams import ModelParams, TrainingParams
-from trainingutils import init_params, save_training_data, save_training_params
+from trainingutils import init_params, save_training_data, save_training_params, load_training_params
 from trainingutils import get_loss_fn, get_batch_fn, get_idx_gen, train_model, compute_losses_no_model
 
 
@@ -41,8 +42,8 @@ from trainingutils import get_loss_fn, get_batch_fn, get_idx_gen, train_model, c
 #########################
 
 
-simname = "test"
-train_id = "test"
+simname = "fourth"
+train_id = "fourth"
 
 
 cfl_safety=0.3
@@ -55,23 +56,25 @@ ic_wavenumber = 2
 
 batch_size= 100
 learning_rate=1e-4
-num_epochs = 1000
+num_epochs = 16000
 kernel_size = 5
 depth = 6
-
 width = 64
 
-nx_exact = ny_exact = 128
 outer_steps = 100
 n_runs = 100
-t_inner = 0.05
-t_burnin = 40.0
+t_inner = 0.1
+
+
+
+t_burnin = 20.0
+nx_exact = ny_exact = 128
 nxs = [32, 64]
 
-#basedir = "/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
-#readwritedir = "/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
-basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
-readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
+basedir = "/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
+readwritedir = "/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
+#basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
+#readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
 
 #########################
 # END HYPERPARAMS
@@ -83,10 +86,10 @@ plot_dir = '{}/data/plots'.format(readwritedir)
 # In[ ]:
 
 
-def get_sim_params(nx, ny, global_stabilization=False):
+def get_sim_params(nx, ny, global_stabilization=False, energy_conserving=False):
     rk='ssp_rk3'
     flux=Flux.VANLEER
-    return FiniteVolumeSimulationParams(simname, basedir, readwritedir, nx, ny, Lx, Ly, cfl_safety, rk, flux, global_stabilization)
+    return FiniteVolumeSimulationParams(simname, basedir, readwritedir, nx, ny, Lx, Ly, cfl_safety, rk, flux, global_stabilization, energy_conserving)
 
 def get_simulation(sim_params, model=None, params=None):
     return KolmogorovFiniteVolumeSimulation(sim_params, viscosity, forcing_coeff, drag, model=model, params=params)
@@ -144,13 +147,12 @@ for nx in nxs:
 
 
 key_data = jax.random.PRNGKey(0)
-
+key_eval = jax.random.PRNGKey(105)
 simulation_exact = get_simulation(sim_params_exact)
 save_training_data(key_data, sim_params_exact, simulation_exact, t_burnin, t_inner, outer_steps, n_runs, sim_params_ds, simulations_ds, max_velocity=max_velocity, ic_wavenumber=ic_wavenumber)
 
 
 # In[ ]:
-
 
 key_init = jax.random.PRNGKey(42)
 key_train = jax.random.PRNGKey(43)
@@ -172,6 +174,25 @@ for nx in nxs:
     print(losses)
 
 
+
+####################
+# Time for evaluation
+####################
+
+
+t_inner = 0.5
+outer_steps = 20
+
+
+
+
+
+
+
+
+
+
+
 # In[ ]:
 
 
@@ -186,26 +207,20 @@ plt.yscale('log')
 plt.legend()
 plt.savefig('{}/losses_{}.png'.format(plot_dir, train_id))
 plt.savefig('{}/losses_{}.eps'.format(plot_dir, train_id))
-
+plt.close()
 
 # In[ ]:
 
 
-t_inner = 0.01
-outer_steps = 100
-t_burn_in = 40.0
-key_train = jax.random.PRNGKey(0)
-key_eval = jax.random.PRNGKey(105)
+
 
 def errors_sim(key):
-    sim_params_exact = get_sim_params(nx_exact, ny_exact)
-    simulation_exact = get_simulation(sim_params_exact)
 
     key, subkey = jax.random.split(key)
 
     vorticity0 = init_fn_jax_cfd(subkey, sim_params_exact, 7.0, 2)
 
-    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in)
+    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burnin)
     rollout_burnin_fn = jax.jit(get_trajectory_fn(inner_fn_burnin, 1, start_with_input = False))
     v_burnin = rollout_burnin_fn(vorticity0)[0]
 
@@ -244,30 +259,25 @@ def errors_sim(key):
 
     return errors_vanleer, errors_model
 
-errors_vanleer_train, errors_model_train = errors_sim(key_train)
+errors_vanleer_train, errors_model_train = errors_sim(key_data)
 errors_vanleer_eval, errors_model_eval = errors_sim(key_eval)
     
 for i, nx in enumerate(nxs):
-    plt.plot(errors_vanleer_train[i], color='orange',                      label="Training Data, nx={}, MUSCL".format(nx))
-    plt.plot(errors_model_train[i], color='red',                        label="Training Data, nx={}, ML".format(nx))
-    plt.plot(errors_vanleer_eval[i], color='orange',  linestyle='dotted', label="Evalulation Data, nx={}, MUSCL".format(nx))
-    plt.plot(errors_model_eval[i],  color = 'red', linestyle='dotted', label="Evaluation Data, nx={}, ML".format(nx))
+    plt.plot(errors_vanleer_train[i], color='orange',                      label="Training Data, MUSCL".format(nx))
+    plt.plot(errors_model_train[i], color='red',                        label="Training Data, ML".format(nx))
+    plt.plot(errors_vanleer_eval[i], color='orange',  linestyle='dotted', label="Evalulation Data, MUSCL".format(nx))
+    plt.plot(errors_model_eval[i],  color = 'red', linestyle='dotted', label="Evaluation Data, ML".format(nx))
+    plt.title('nx={}'.format(nx))
+    plt.yscale('log')
+    plt.legend()
 
-plt.yscale('log')
-plt.legend()
-
-plt.savefig('{}/MSE_{}.png'.format(plot_dir, train_id))
-plt.savefig('{}/MSE_{}.eps'.format(plot_dir, train_id))
-
+    plt.savefig('{}/MSE_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/MSE_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
 
 # In[ ]:
 
 
-t_inner = 0.1
-outer_steps = 11
-t_burn_in = 40.0
-key_train = jax.random.PRNGKey(0)
-key_eval = jax.random.PRNGKey(105)
 
 def compute_correlation(trajectory_exact, trajectory, sim_params):
     trajectory_exact_ds = jax.vmap(convert_FV_representation, in_axes=(0,None))(trajectory_exact, sim_params)
@@ -280,12 +290,10 @@ def correlations(key):
     
     key, subkey = jax.random.split(key)
     
-    sim_params_exact = get_sim_params(nx_exact, ny_exact)
-    simulation_exact = get_simulation(sim_params_exact)
 
     vorticity0 = init_fn_jax_cfd(subkey, sim_params_exact, 7.0, 2)
 
-    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in)
+    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burnin)
     rollout_burnin_fn = jax.jit(get_trajectory_fn(inner_fn_burnin, 1, start_with_input = False))
     v_burnin = rollout_burnin_fn(vorticity0)[0]
 
@@ -347,46 +355,40 @@ def correlations(key):
     return corrs_vanleer, corrs_model, corrs_model_gs, corrs_model_ec
     
 
-corrs_vanleer_train, corrs_model_train, corrs_model_gs_train, corrs_model_ec_train = correlations(key_train)
+corrs_vanleer_train, corrs_model_train, corrs_model_gs_train, corrs_model_ec_train = correlations(key_data)
 corrs_vanleer_eval, corrs_model_eval, corrs_model_gs_eval, corrs_model_ec_eval = correlations(key_eval)
 
 Ts = jnp.arange(outer_steps) * t_inner
     
 for i, nx in enumerate(nxs):
-    plt.plot(Ts, corrs_vanleer_train[i], color='orange', label="Training Data, nx={}, MUSCL".format(nx))
-    plt.plot(Ts, corrs_model_train[i], color='red', label="Training Data, nx={}, ML".format(nx))
-    plt.plot(Ts, corrs_model_gs_train[i], color='blue', label="Training Data, nx={}, ML GS".format(nx))
-    plt.plot(Ts, corrs_model_ec_train[i], color='green',  label="Training Data, nx={}, ML EC".format(nx))
+    plt.plot(Ts, corrs_vanleer_train[i], color='orange', label="Training Data, MUSCL".format(nx))
+    plt.plot(Ts, corrs_model_train[i], color='red', label="Training Data, ML".format(nx))
+    plt.plot(Ts, corrs_model_gs_train[i], color='blue', label="Training Data, ML GS".format(nx))
+    plt.plot(Ts, corrs_model_ec_train[i], color='green',  label="Training Data, ML EC".format(nx))
     
-    plt.plot(Ts, corrs_vanleer_eval[i], color='orange', linestyle='dotted',  label="Evalulation Data, nx={}, MUSCL".format(nx))
-    plt.plot(Ts, corrs_model_eval[i],  color = 'red', linestyle='dotted', label="Evaluation Data, nx={}, ML".format(nx))
-    plt.plot(Ts, corrs_model_gs_eval[i],  color = 'blue', linestyle='dotted', label="Evaluation Data, nx={}, ML GS".format(nx))
-    plt.plot(Ts, corrs_model_ec_eval[i],  color = 'green', linestyle='dotted', label="Evaluation Data, nx={}, ML EC".format(nx))
+    plt.plot(Ts, corrs_vanleer_eval[i], color='orange', linestyle='dotted',  label="Evaluation Data, MUSCL".format(nx))
+    plt.plot(Ts, corrs_model_eval[i],  color = 'red', linestyle='dotted', label="Evaluation Data, ML".format(nx))
+    plt.plot(Ts, corrs_model_gs_eval[i],  color = 'blue', linestyle='dotted', label="Evaluation Data, ML GS".format(nx))
+    plt.plot(Ts, corrs_model_ec_eval[i],  color = 'green', linestyle='dotted', label="Evaluation Data, ML EC".format(nx))
 
 
-    
-plt.legend()
+    plt.title('nx={}'.format(nx))
+    plt.legend()
 
-plt.savefig('{}/corr_{}.png'.format(plot_dir, train_id))
-plt.savefig('{}/corr_{}.eps'.format(plot_dir, train_id))
-
+    plt.savefig('{}/corr_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/corr_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
 
 # In[ ]:
 
 
-t_inner = 0.1
-outer_steps = 11
-t_burn_in = 40.0
-key_train = jax.random.PRNGKey(0)
 
-key, subkey = jax.random.split(key_train)
+key, subkey = jax.random.split(key_data)
 
-sim_params_exact = get_sim_params(nx_exact, ny_exact)
-simulation_exact = get_simulation(sim_params_exact)
 
 vorticity0 = init_fn_jax_cfd(subkey, sim_params_exact, 7.0, 2)
 
-inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in)
+inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burnin)
 rollout_burnin_fn = jax.jit(get_trajectory_fn(inner_fn_burnin, 1, start_with_input = False))
 v_burnin = rollout_burnin_fn(vorticity0)[0]
 
@@ -394,6 +396,60 @@ inner_fn = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_inne
 rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
 exact_trajectory = rollout_fn(v_burnin)
 
-plt.savefig('{}/rollout_{}.png'.format(plot_dir, train_id))
-plt.savefig('{}/rollout_{}.eps'.format(plot_dir, train_id))
 
+
+for i, nx in enumerate(nxs):
+
+    sim_params = get_sim_params(nx, nx)
+    convert_fn = lambda v: convert_FV_representation(v, sim_params)
+    v_burnin_ds = convert_fn(v_burnin)
+
+    _, params = load_training_params(sim_params, model)
+
+
+    # MUSCL
+    simulation = get_simulation(sim_params)
+    inner_fn = get_inner_fn(simulation.step_fn, simulation.dt_fn, t_inner)
+    rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
+    traj_vanleer = rollout_fn(v_burnin_ds)
+
+    # Model
+    simulation = get_simulation(sim_params, model=model, params=params)
+    inner_fn = get_inner_fn(simulation.step_fn, simulation.dt_fn, t_inner)
+    rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
+    traj_model = rollout_fn(v_burnin_ds)
+
+    # Model GS
+    sim_params_gs = get_sim_params(nx, nx, global_stabilization=True)
+    simulation_gs = get_simulation(sim_params_gs, model=model, params=params)
+    inner_fn_gs = get_inner_fn(simulation_gs.step_fn, simulation_gs.dt_fn, t_inner)
+    rollout_fn_gs = jax.jit(get_trajectory_fn(inner_fn_gs, outer_steps))
+    traj_model_gs = rollout_fn_gs(v_burnin_ds)
+
+    # Model EC
+    sim_params_ec = get_sim_params(nx, nx, global_stabilization=True, energy_conserving=True)
+    simulation_ec = get_simulation(sim_params_ec, model=model, params=params)
+    inner_fn_ec = get_inner_fn(simulation_ec.step_fn, simulation_ec.dt_fn, t_inner)
+    rollout_fn_ec = jax.jit(get_trajectory_fn(inner_fn_ec, outer_steps))
+    traj_model_ec = rollout_fn_ec(v_burnin_ds)
+
+    plot_trajectory_fv(exact_trajectory, sim_params, t_inner)
+    plt.savefig('{}/exactrollout_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/exactrollout_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
+    plot_trajectory_fv(traj_vanleer, sim_params, t_inner)
+    plt.savefig('{}/musclrollout_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/musclrollout_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
+    plot_trajectory_fv(traj_model, sim_params, t_inner)
+    plt.savefig('{}/modelrollout_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/modelrollout_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
+    plot_trajectory_fv(traj_model_gs, sim_params, t_inner)
+    plt.savefig('{}/gsrollout_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/gsrollout_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()
+    plot_trajectory_fv(traj_model_ec, sim_params, t_inner)
+    plt.savefig('{}/ecrollout_{}_{}.png'.format(plot_dir, nx, train_id))
+    plt.savefig('{}/ecrollout_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.close()

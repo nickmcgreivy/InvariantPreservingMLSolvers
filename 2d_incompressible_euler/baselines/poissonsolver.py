@@ -42,6 +42,8 @@ from jax.scipy.linalg import lu_factor
 import timeit
 import time
 from jax import config, jit
+import jax.experimental.host_callback as hcb
+
 
 config.update("jax_enable_x64", True)
 
@@ -344,31 +346,24 @@ def get_poisson_solve_fn_fv(sim_params):
     V_sp = jsparse.BCOO.from_scipy_sparse(sV)
     args = V_sp.data, V_sp.indices, N_global_elements
     kwargs = {"forward": True}
-    custom_lu_solve = lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
+    #tol = 1e-8
+    #V = sparse.csr_matrix.todense(sV)[1:, 1:]
+    #data, indices, indptr = jsparse.csr_fromdense(V, nse=np.count_nonzero(V))
+    #jax_lu_solve = lambda b: jsparse.sparsify(spsolve)(data, indices, indptr, b, tol=tol)
 
-
-    tol = 1e-10
-    V = sparse.csr_matrix.todense(sV)[1:, 1:]
-    data, indices, indptr = jsparse.csr_fromdense(V, nse=np.count_nonzero(V))
-    jax_lu_solve = lambda b: spsolve(data, indices, indptr, b, tol=tol)
     platform = xla_bridge.get_backend().platform
-    zero_array = jnp.asarray([0.0])
-
 
     if platform == 'cpu':
-        lu_solve = custom_lu_solve
+        custom_lu_solve = jax.jit(lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs))
 
-        def final_step(b):
-            res = lu_solve(b)
+        def solve_step(b):
+            res = custom_lu_solve(b)
             return res - jnp.mean(res)
 
     elif platform == 'gpu':
-        lu_solve = jax_lu_solve
-
-        def final_step(b):
-            b = b[1:]
-            res = lu_solve(b)
-            res = jnp.concatenate((zero_array, res))
+        custom_lu_solve = jax.jit(lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs), backend='cpu')
+        def solve_step(b):
+            res = jax.pure_callback(custom_lu_solve, b, b)
             return res - jnp.mean(res)
 
     else:
@@ -385,7 +380,7 @@ def get_poisson_solve_fn_fv(sim_params):
             dimension_numbers=("NHWC", "HWOI", "NHWC"),
         )[0]
         b = -F_ijb[T[:, 0], T[:, 1], T[:, 2]]
-        res = final_step(b)
+        res = solve_step(b)
         return res.at[M].get()
 
     return solve
