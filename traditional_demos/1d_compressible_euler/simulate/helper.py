@@ -231,3 +231,10 @@ def get_w(a, core_params):
 	E = a[2]
 	p_star = (gamma - 1) / (gamma + 1) * (p / rho**gamma) ** (1/(1+gamma))
 	return p_star / p * jnp.asarray([E, -rhou, rho])
+
+def get_entropy_flux(a, core_params):
+	p = get_p(a, core_params)
+	rhov = a[1]
+	rho = a[0]
+	gamma = core_params.gamma
+	return rhov * (p / rho**gamma)**(1/(1+gamma))

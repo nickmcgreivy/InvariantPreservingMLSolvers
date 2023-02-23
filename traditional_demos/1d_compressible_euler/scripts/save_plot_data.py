@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
 
 
 # setup paths
@@ -14,7 +14,7 @@ sys.path.append('{}/simulate'.format(basedir))
 sys.path.append('{}/ml'.format(basedir))
 
 
-# In[2]:
+# In[ ]:
 
 
 # import external packages
@@ -28,17 +28,17 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-# In[3]:
+# In[ ]:
 
 
-from initialconditions import get_a0, f_init_lax_shock_tube, shock_tube_problem_1, shock_tube_problem_2, shock_tube_problem_3, shock_tube_problem_4, shock_tube_problem_5, shock_tube_problem_6, shock_tube_problem_7, shock_tube_problem_8
+from initialconditions import get_a0, shock_tube_problem_1
 from simparams import CoreParams, SimulationParams
 from simulations import EulerFVSim
 from helper import get_rho, get_u, get_p, get_entropy, get_w
 from trajectory import get_trajectory_fn, get_inner_fn
 
 
-# In[4]:
+# In[ ]:
 
 
 def get_core_params(Lx = 1.0, gamma = 5/3, bc = 'periodic', fluxstr = 'laxfriedrichs'):
@@ -86,11 +86,11 @@ def plot_trajectory(trajectory, core_params, mins = [0.0 - 2e-2] * 3, maxs= [1.0
         col='time', col_wrap=5)
 
 
-# In[16]:
+# In[ ]:
 
 
-kwargs_core_params = {'Lx': 1.0, 'gamma': 1.4, 'bc': 'ghost', 'fluxstr': 'musclcharacteristic'}
-kwargs_sim = {'name' : "test_euler", 'cfl_safety' : 0.01, 'rk' : 'ssp_rk3'}
+kwargs_core_params = {'Lx': 1.0, 'gamma': 1.4, 'bc': 'open', 'fluxstr': 'musclcharacteristic'}
+kwargs_sim = {'name' : "test_euler", 'cfl_safety' : 0.2, 'rk' : 'ssp_rk3'}
 
 core_params = get_core_params(**kwargs_core_params)
 sim_params = get_sim_params(**kwargs_sim)
@@ -122,9 +122,9 @@ def G_w(a, core_params):
     w = get_w(a, core_params)
     return w[:,1:] - w[:,:-1]
 
-ratio1 = 0.0
-ratio2 = 0.5
-ratio3 = 1.25
+ratio1 = 1.0
+ratio2 = 0.0
+ratio3 = 2.0
 G_select = G_primitive
 
 sim = EulerFVSim(core_params, sim_params, deta_dt_ratio = None, G = None)
@@ -151,11 +151,10 @@ trajectory_double = trajectory_fn(a0)
 # In[ ]:
 
 
-
-label0 = r'$\frac{d\eta^{new}}{dt} = 0$'
-label1 = r'$\frac{d\eta^{new}}{dt} = \frac{1}{2}\frac{d\eta^{old}}{dt}$'
-label2 = r'$\frac{d\eta^{new}}{dt} = \frac{5}{4}\frac{d\eta^{old}}{dt}$'
-label3 = r'$\frac{d\eta^{new}}{dt} = \frac{d\eta^{old}}{dt}$'
+label0 = r'R=1' #r'$\frac{d\eta^{new}}{dt} = 0$'
+label1 = r'R=0' #r'$\frac{d\eta^{new}}{dt} = \frac{1}{2}\frac{d\eta^{old}}{dt}$'
+label2 = r'R=2' #r'$\frac{d\eta^{new}}{dt} = \frac{5}{4}\frac{d\eta^{old}}{dt}$'
+label3 = r'R=1' #r'$\frac{d\eta^{new}}{dt} = \frac{d\eta^{old}}{dt}$'
 color0 = "red"
 color1 = "blue"
 color2 = "green"
@@ -164,6 +163,8 @@ color3 = "black"
 i=2
 R = 1.0
 fs = 14
+lw = 2.0
+lw_zero = 1.0
 figsize = (4*R,3*R)
 fig0, ax0 = plt.subplots(1,1, figsize=figsize)
 fig1, ax1 = plt.subplots(1,1, figsize=figsize)
@@ -172,25 +173,24 @@ fig2, ax2 = plt.subplots(1,1, figsize=figsize)
 axs = [ax0, ax1, ax2]
 
 x = jnp.linspace(0,1.0,trajectory_exact[i].shape[1])
-
 #axs[0].plot(x,get_rho(trajectory_zero[i],core_params),label=label0,color=color0)
-axs[0].plot(x,get_rho(trajectory_half[i],core_params),label=label1,color=color1)
-axs[0].plot(x,get_rho(trajectory_double[i],core_params),label=label2,color=color2)
-axs[0].plot(x,get_rho(trajectory_exact[i],core_params),label=label3, color=color3)
+axs[0].plot(x,get_rho(trajectory_exact[i],core_params),label=label3, color=color3, linewidth=lw)
+axs[0].plot(x,get_rho(trajectory_double[i],core_params),label=label2,color=color2, linewidth=lw)
+axs[0].plot(x,get_rho(trajectory_half[i],core_params),label=label1,color=color1, linewidth=lw_zero)
 axs[0].set_ylim([0.0, 1.06])
 axs[0].set_xlim([0.0, 1.0])
 
 #axs[1].plot(x,get_u(trajectory_zero[i],core_params),label=label0,color=color0)
-axs[1].plot(x,get_u(trajectory_half[i],core_params),label=label1,color=color1)
-axs[1].plot(x,get_u(trajectory_double[i],core_params),label=label2,color=color2)
-axs[1].plot(x,get_u(trajectory_exact[i],core_params),label=label3, color=color3)
-axs[1].set_ylim([-0.05, 1.65])
+axs[1].plot(x,get_u(trajectory_exact[i],core_params),label=label3, color=color3, linewidth=lw)
+axs[1].plot(x,get_u(trajectory_double[i],core_params),label=label2,color=color2, linewidth=lw)
+axs[1].plot(x,get_u(trajectory_half[i],core_params),label=label1,color=color1, linewidth=lw_zero)
+axs[1].set_ylim([-0.25, 1.95])
 axs[1].set_xlim([0.0, 1.0])
 
 #axs[2].plot(x,get_p(trajectory_zero[i],core_params),label=label0,color=color0)
-axs[2].plot(x,get_p(trajectory_half[i],core_params),label=label1,color=color1)
-axs[2].plot(x,get_p(trajectory_double[i],core_params),label=label2,color=color2)
-axs[2].plot(x,get_p(trajectory_exact[i],core_params),label=label3, color=color3)
+axs[2].plot(x,get_p(trajectory_exact[i],core_params),label=label3, color=color3, linewidth=lw)
+axs[2].plot(x,get_p(trajectory_double[i],core_params),label=label2,color=color2, linewidth=lw)
+axs[2].plot(x,get_p(trajectory_half[i],core_params),label=label1,color=color1, linewidth=lw_zero)
 axs[2].set_ylim([0.0, 1.06])
 axs[2].set_xlim([0.0, 1.0])
 
@@ -223,13 +223,11 @@ axs[j].set_xlabel(r'$p$', fontsize=fs)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig0.legend(by_label.values(), by_label.keys(),loc=(0.58,0.53), prop={'size': fs*0.95}, frameon=False)
+fig0.legend(by_label.values(), by_label.keys(),loc=(0.63,0.6), prop={'size': 1.1*fs}, frameon=False)
 fig0.tight_layout()
 fig1.tight_layout()
 fig2.tight_layout()
 
-
-# In[ ]:
 
 fig0.savefig("compressible_euler_rho_demo.eps")
 fig0.savefig("compressible_euler_rho_demo.png")
@@ -238,5 +236,51 @@ fig1.savefig("compressible_euler_v_demo.png")
 fig2.savefig("compressible_euler_p_demo.eps")
 fig2.savefig("compressible_euler_p_demo.png")
 
-plt.show()
+
+# In[ ]:
+
+
+from timederivative import _time_derivative_euler_open
+from helper import get_entropy_flux, get_w
+from initialconditions import get_u_left, get_u_right
+import jax.numpy as jnp
+
+
+def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None, G = None):
+    flux_term = _time_derivative_euler_open(core_params, dt_fn = dt_fn)
+    def dadt(a):
+        nx = a.shape[1]
+        dx = core_params.Lx / nx
+        F = flux_term(a)# (3, nx + 1)
+        if G is not None:
+            assert deta_dt_ratio is not None
+            G_R = G(a, core_params) # (3, nx-1)
+            w = get_w(a, core_params) # (3, nx)
+            diff_w = (w[:,1:] - w[:,:-1])
+            deta_dt_old = jnp.sum(F[:,1:-1] * diff_w) - jnp.sum(F[:, -1] * w[:, -1]) + jnp.sum(F[:, 0] * w[:, 0])
+            deta_dt_bc = get_entropy_flux(get_u_left(core_params), core_params) - get_entropy_flux(get_u_right(core_params), core_params)
+            deta_dt_new =  deta_dt_bc + deta_dt_ratio * (deta_dt_old - deta_dt_bc)
+            
+            print(deta_dt_old)
+            print(deta_dt_bc)
+            print(deta_dt_new)
+            denom = jnp.sum(G_R * diff_w)
+            F = F.at[:,1:-1].add((deta_dt_new - deta_dt_old) * G_R / denom)
+        F_R = F[:, 1:]
+        F_L = F[:, :-1]
+        return (F_L - F_R) / dx
+
+    return dadt
+
+core_params = get_core_params(**kwargs_core_params)
+
+dadt = time_derivative_FV_1D_euler(core_params, None, deta_dt_ratio = 2.0, G=G_primitive)
+
+res = dadt(trajectory_zero[3])
+
+
+# In[ ]:
+
+
+
 
