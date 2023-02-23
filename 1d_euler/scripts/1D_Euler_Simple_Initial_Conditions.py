@@ -17,7 +17,7 @@ import sys
 #basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
 #readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
 basedir = '/home/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
-readwritedir = 'scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
+readwritedir = '/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
 
 sys.path.append('{}/core'.format(basedir))
 sys.path.append('{}/simulate'.format(basedir))
@@ -163,10 +163,10 @@ gamma = 1.4
 
 flux_exact = 'musclcharacteristic'
 flux_learned = 'learned'
-n_runs = 10000
+n_runs = 100
 t_inner_train = 0.01
 Tf = 0.2
-BC = 'open'
+BC = 'periodic'
 sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
 DEPTH=5
@@ -181,7 +181,7 @@ key_init_params = jax.random.PRNGKey(31)
 BASEBATCHSIZE = 64
 WIDTH = 32
 learning_rate = 1e-4
-NUM_TRAINING_ITERATIONS = 200000
+NUM_TRAINING_ITERATIONS = 2000
 
 ###### END HYPERPARAMS
 
@@ -242,7 +242,7 @@ for i, nx in enumerate(nxs):
 
 
 
-N_test = 100
+N_test = 2
 
 key = jax.random.PRNGKey(45)
 
@@ -254,8 +254,8 @@ outer_steps = 11
 
 convert_trajectory_fn = vmap(convert_FV_representation, (0, None, None))
 
-def RMSE_trajectory(traj, traj_ex):
-    return jnp.sqrt(jnp.mean((traj - traj_ex)**2))
+def MSE_trajectory(traj, traj_ex):
+    return jnp.mean((traj - traj_ex)**2)
 
 # trajectory setup
 
@@ -308,9 +308,9 @@ for n in range(N_test):
         # Invariant-preserving ML trajectory
         trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.05)
         
-        error_muscl = RMSE_trajectory(trajectory_muscl, trajectory_exact_ds)
-        error_ml = RMSE_trajectory(trajectory_ML, trajectory_exact_ds)
-        error_ml_gs = RMSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
+        error_muscl = MSE_trajectory(trajectory_muscl, trajectory_exact_ds)
+        error_ml = MSE_trajectory(trajectory_ML, trajectory_exact_ds)
+        error_ml_gs = MSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
         if not onp.isnan(error_ml) and error_ml < 1.0:
             errors[i, 0] += error_muscl
             errors[i, 1] += error_ml
@@ -323,10 +323,9 @@ print("number nan: {}".format(N_test - num_not_nan))
 
 # In[ ]:
 
-"""
 with open('mses_simple_{}.npy'.format(BC), 'wb') as f:
     onp.save(f, errors)
-
+"""
 
 # In[ ]:
 

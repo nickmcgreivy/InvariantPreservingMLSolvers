@@ -51,7 +51,7 @@ def save_training_data(key, init_fn, core_params, sim_params, sim_fn, t_inner, o
 
 	@jax.jit
 	def get_trajectory(key):
-		f_init = init_fn(subkey)
+		f_init = init_fn(key)
 		a0 = get_a0(f_init, core_params, nx_exact)
 		aL = f_init(0.0, 0.0)
 		aR = f_init(core_params.Lx, 0.0)

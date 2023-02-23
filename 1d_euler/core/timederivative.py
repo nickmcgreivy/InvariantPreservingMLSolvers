@@ -581,7 +581,7 @@ def entropy_increase_periodic(a, flux_right, core_params):
 		rho = a[0]
 		zeros = jnp.zeros(rho.shape)
 		u = a[1] / a[0]
-		G = jnp.concatenate([rho[None], u[None], p[None]],axis=0)
+		G = jnp.concatenate([zeros[None], u[None], p[None]],axis=0)
 		return jnp.roll(G, -1, axis=-1) - G
 
 	G_R = G_primitive_periodic(a, core_params) # (3, nx)
