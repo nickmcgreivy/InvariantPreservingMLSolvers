@@ -10,6 +10,24 @@ from model import model_flux_FV_1D_euler
 from jax import config
 config.update("jax_enable_x64", True)
 
+def pad_open(a, aL, aR, core_params):
+	mode = 'constant'
+
+	rho = a[0]
+	rhov = a[1]
+	E = a[2]
+	rho = jnp.pad(rho, (n, 0), mode=mode, constant_values=(aL[0],))
+	rho = jnp.pad(rho, (0, n), mode=mode, constant_values=(aR[0],))
+	rhov = jnp.pad(rhov, (n, 0), mode=mode, constant_values=(aL[1],))
+	rhov = jnp.pad(rhov, (0, n), mode=mode, constant_values=(aR[1],))
+	E = jnp.pad(E, (n, 0), mode=mode, constant_values=(aL[2],))
+	E = jnp.pad(E, (0, n), mode=mode, constant_values=(aR[2],))
+	return jnp.concatenate([rho[None], rhov[None], E[None]], axis=0)
+
+def pad_ghost(a):
+	return jnp.pad(a, ((0,0), (2,2)), mode='edge')
+
+
 def minmod_3(z1, z2, z3):
 	s = (
 		0.5
@@ -193,7 +211,49 @@ def flux_musclprimitive_periodic(a, core_params):
 
 
 def flux_musclcharacteristic_ghost(a, core_params):
-	a = jnp.pad(a, ((0,0), (2,2)), mode='edge')
+	a = pad_ghost(a)
+
+	dQ_minus = a[:,1:-1] - a[:, :-2]
+	dQ_plus = a[:, 2:] - a[:, 1:-1]
+
+	a = a[:,1:-1]
+
+	h = get_H(a, core_params)
+	u = get_u(a, core_params)
+	c = get_c(a, core_params)
+	b = core_params.gamma - 1
+
+	#### See SimJournal 4 for notation http://ammar-hakim.org/sj/euler-eigensystem.html
+
+	alpha_1_minus = (b / c**2) * ( (h-u**2) * dQ_minus[0] + u * dQ_minus[1] - dQ_minus[2] )
+	alpha_2_minus = 1 / (2 * c) * (dQ_minus[1] +(c - u) * dQ_minus[0] - c * alpha_1_minus )
+	alpha_0_minus = dQ_minus[0] - alpha_1_minus - alpha_2_minus
+	dD_minus = jnp.asarray([alpha_0_minus, alpha_1_minus, alpha_2_minus]) # D stands for Delta = L(Q_i) (Q_{...}-Q_{...})
+	
+	alpha_1_plus = (b / c**2) * ( (h-u**2) * dQ_plus[0] + u * dQ_plus[1] - dQ_plus[2] )
+	alpha_2_plus = 1 / (2 * c) * (dQ_plus[1] + (c - u) * dQ_plus[0] - c * alpha_1_plus )
+	alpha_0_plus = dQ_plus[0] - alpha_1_plus - alpha_2_plus
+	dD_plus = jnp.asarray([alpha_0_plus, alpha_1_plus, alpha_2_plus])
+
+	dD = vmap_minmod_3(dD_minus, (dD_plus + dD_minus) / 4, dD_plus)
+
+	ones = jnp.ones(a.shape[1])
+	r1 = jnp.asarray([ones, u - c, h - u * c])
+	r2 = jnp.asarray([ones, u,     u**2 / 2 ])
+	r3 = jnp.asarray([ones, u + c, h + u * c])
+	R = jnp.asarray([r1, r2, r3])
+
+	da_j = jnp.einsum('ijk,ik->jk', R, dD)
+
+	da_j = limit_da(a, da_j, core_params)
+
+	aL = (a + da_j)[:,:-1]
+	aR = (a - da_j)[:, 1:]
+	F  = flux_roe(aL, aR, core_params)
+	return F
+
+def flux_musclcharacteristic_open(a, aL, aR core_params):
+	a = pad_open(a, aL, aR, core_params)
 
 
 	dQ_minus = a[:,1:-1] - a[:, :-2]
@@ -285,7 +345,7 @@ def flux_ep_ghost(a, core_params):
 def flux_learned_periodic(a, core_params, model = None, params = None):
 	return model_flux_FV_1D_euler(a, model, params)
 
-def flux_learned_ghost(a, core_params, model=None, params=None):
+def flux_learned_nonperiodic(a, core_params, model=None, params=None):
 	return model_flux_FV_1D_euler(a, model, params)
 
 
@@ -338,7 +398,20 @@ def _time_derivative_euler_ghost(core_params, model=None, params=None, dt_fn=Non
 	elif core_params.flux == Flux.LEARNED:
 		def flux_term(a):
 			flux_right = flux_musclcharacteristic_ghost(a, core_params)
-			delta_flux_right = flux_learned_ghost(a, core_params, model = model, params = params)
+			delta_flux_right = flux_learned_nonperiodic(a, core_params, model = model, params = params)
+			return flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
+	else:
+		raise NotImplementedError
+
+	return flux_term
+
+def _time_derivative_euler_open(core_params, model=None, params=None, dt_fn=None):
+	if core_params.flux == Flux.MUSCLCHARACTERISTIC:
+		flux_term = lambda a, aL, aR: flux_musclcharacteristic_open(a, aL, aR, core_params)
+	elif core_params.flux == Flux.LEARNED:
+		def flux_term(a, aL, aR):
+			flux_right = flux_musclcharacteristic_open(a, aL, aR, core_params)
+			delta_flux_right = flux_learned_nonperiodic(a, core_params, model = model, params = params)
 			return flux_right.at[:,1:-1].add(delta_flux_right[:, 1:-1])
 	else:
 		raise NotImplementedError
@@ -426,7 +499,7 @@ def positivity_limiter_periodic(a, flux_right, core_params, dt_fn):
 	return flux_return
 
 
-def positivity_limiter_ghost(a, flux_right, core_params, dt_fn):
+def positivity_limiter_nonperiodic(a, flux_right, core_params, dt_fn):
 
 	def get_a_plus_minus(a, flux_right, core_params, delta):
 		# a is (3, nx+1), F is (3, nx+1), want to return 
@@ -573,24 +646,55 @@ def entropy_increase_ghost(a, flux_right, core_params):
 	return flux_right
 
 
-def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None, invariant_preserving=False,):
+def entropy_increase_open(a, flux_right, core_params, aL, aR):
+
+	def G_primitive_open(a, core_params):
+			p = get_p(a, core_params)
+			rho = a[0]
+			zeros = jnp.zeros(rho.shape)
+			u = a[1] / a[0]
+			G = jnp.concatenate([zeros[None], u[None], p[None]], axis=0)
+			return G[:,1:] - G[:,:-1]
+
+	G_R = G_primitive_open(a, core_params) # (3, nx-1)
+	w = get_w(a, core_params) # (3, nx)
+	diff_w = (w[:,1:] - w[:,:-1])
+	deta_dt_old = jnp.sum(flux_right[:,1:-1] * diff_w) + jnp.sum(flux_right[:,0] * w[:,0]) - jnp.sum(flux_right[:,-1] * w[:,-1])
+	deta_dt_new = get_entropy_flux(aL, core_params) - get_entropy_flux(aR, core_params)
+	denom = jnp.sum(G_R * diff_w)
+	flux_right = flux_right.at[:,1:-1].add(jnp.nan_to_num((deta_dt_old < deta_dt_new) * (deta_dt_new - deta_dt_old) * G_R / denom))
+	return flux_right
+
+
+def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = None, invariant_preserving=False):
 
 	if core_params.bc == BoundaryCondition.GHOST:
 		flux_term = _time_derivative_euler_ghost(core_params, model=model, params=params, dt_fn = dt_fn)
-		def dadt(a):
+		def dadt(a, aL=None, aR=None):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
 			F = flux_term(a) 
 
 			if invariant_preserving == True:
-				# preserve positivity
-
 				assert dt_fn is not None
-				F = positivity_limiter_ghost(a, F, core_params, dt_fn)
-
-				# enforce entropy increase
-
+				F = positivity_limiter_nonperiodic(a, F, core_params, dt_fn)
 				F = entropy_increase_ghost(a, F, core_params)
+
+			F_R = F[:, 1:]
+			F_L = F[:, :-1]
+			return (F_L - F_R) / dx
+
+	elif core_params.bc == BoundaryCondition.OPEN:
+		flux_term = _time_derivative_euler_open(core_params, model=model, params=params, dt_fn = dt_fn)
+		def dadt(a, aL, aR):
+			nx = a.shape[1]
+			dx = core_params.Lx / nx
+			F = flux_term(a, aL, aR)# (3, nx + 1)
+
+			if invariant_preserving == True:
+				assert dt_fn is not None
+				F = positivity_limiter_nonperiodic(a, F, core_params, dt_fn)
+				F = entropy_increase_open(a, F, core_params, aL, aR)
 
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
@@ -598,18 +702,14 @@ def time_derivative_FV_1D_euler(core_params, model=None, params=None, dt_fn = No
 
 	elif core_params.bc == BoundaryCondition.PERIODIC:
 		flux_term = _time_derivative_euler_periodic(core_params, model=model, params=params, dt_fn = dt_fn)
-		def dadt(a):
+		def dadt(a, aL=None, aR=None):
 			nx = a.shape[1]
 			dx = core_params.Lx / nx
 			flux_right = flux_term(a) 
 
 			if invariant_preserving == True:
-
-				# preserve positivity
 				assert dt_fn is not None
 				flux_right = positivity_limiter_periodic(a, flux_right, core_params, dt_fn)
-
-				# enforce entropy increase
 				flux_right = entropy_increase_periodic(a, flux_right, core_params)
 
 			flux_left = jnp.roll(flux_right, 1, axis=1)
