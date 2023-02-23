@@ -28,6 +28,20 @@ def f_init_lax_shock_tube(core_params):
 
 	return f_init
 
+def get_u_left(core_params):
+	rho_L = 1.0
+	p_L = 1.0
+	u_L = 0.75
+	E_L = p_L / (core_params.gamma - 1) + 1/2 * rho_L * u_L**2 
+	return jnp.asarray([rho_L, rho_L * u_L, E_L])
+
+
+def get_u_right(core_params):
+	rho_R = 1/8
+	p_R = 0.1
+	u_R = 0.0
+	E_R = p_R / (core_params.gamma - 1) + 1/2 * rho_R * u_R**2 
+	return jnp.asarray([rho_R, rho_R * u_R, E_R])
 
 def shock_tube_problem_1(core_params):
 	Lx = core_params.Lx

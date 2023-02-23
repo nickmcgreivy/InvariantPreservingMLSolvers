@@ -4,15 +4,46 @@ from jax import vmap
 
 from flux import Flux
 from boundaryconditions import BoundaryCondition
-from helper import get_p, get_u, get_H, get_c, get_w
+from helper import get_p, get_u, get_H, get_c, get_w, get_entropy_flux
+from initialconditions import get_u_left, get_u_right
 
 
 
-def pad(a, n):
+def ghost_pad(a, n):
 	mode = 'edge'
 	return jnp.pad(a, ((0,0), (n,n)), mode=mode)
 
+def open_pad(a, n, core_params):
+	mode = 'constant'
+	aL = get_u_left(core_params)
+	aR = get_u_right(core_params)
 
+	rho = a[0]
+	rhov = a[1]
+	E = a[2]
+	rho = jnp.pad(rho, (n, 0), mode=mode, constant_values=(aL[0],))
+	rho = jnp.pad(rho, (0, n), mode=mode, constant_values=(aR[0],))
+	rhov = jnp.pad(rhov, (n, 0), mode=mode, constant_values=(aL[1],))
+	rhov = jnp.pad(rhov, (0, n), mode=mode, constant_values=(aR[1],))
+	E = jnp.pad(E, (n, 0), mode=mode, constant_values=(aL[2],))
+	E = jnp.pad(E, (0, n), mode=mode, constant_values=(aR[2],))
+	return jnp.concatenate([rho[None], rhov[None], E[None]], axis=0)
+
+def closed_pad(a, n):
+	mode = 'constant'
+	aL = jnp.asarray([a[0,0], -a[1,0], a[2,0]])
+	aR = jnp.asarray([a[0,-1], -a[1,-1], a[2,-1]])
+
+	rho = a[0]
+	rhov = a[1]
+	E = a[2]
+	rho = jnp.pad(rho, (n, 0), mode=mode, constant_values=(aL[0],))
+	rho = jnp.pad(rho, (0, n), mode=mode, constant_values=(aR[0],))
+	rhov = jnp.pad(rhov, (n, 0), mode=mode, constant_values=(aL[1],))
+	rhov = jnp.pad(rhov, (0, n), mode=mode, constant_values=(aR[1],))
+	E = jnp.pad(E, (n, 0), mode=mode, constant_values=(aL[2],))
+	E = jnp.pad(E, (0, n), mode=mode, constant_values=(aR[2],))
+	return jnp.concatenate([rho[None], rhov[None], E[None]], axis=0)
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -93,7 +124,7 @@ def flux_periodic(a, core_params, flux_fn):
 
 
 def flux_ghost(a, core_params, flux_fn):
-	a = pad(a, 1)
+	a = ghost_pad(a, 1)
 	a_j = a[:, :-1]
 	a_j_plus_one = a[:, 1:]
 	F = flux_fn(a_j, a_j_plus_one, core_params)
@@ -117,9 +148,7 @@ def limit_dV(V, dV, core_params):
 	return ~((Vp[0] < 0) | (Vm[0] < 0) | (Vp[2] < 0) | (Vm[2] < 0)) * dV
 
 
-def flux_musclconserved_ghost(a, core_params):
-	a = pad(a, 2)
-
+def flux_musclconserved_nonperiodic(a, core_params):
 	da_j_minus = a[:,1:-1] - a[:, :-2]
 	da_j_plus  = a[:, 2:]  - a[:, 1:-1]
 	a = a[:, 1:-1]
@@ -131,6 +160,18 @@ def flux_musclconserved_ghost(a, core_params):
 	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
 	return F
+
+def flux_musclconserved_ghost(a, core_params):
+	a = ghost_pad(a, 2)
+	return flux_musclconserved_nonperiodic(a, core_params)
+
+def flux_musclconserved_open(a, core_params):
+	a = open_pad(a, 2, core_params)
+	return flux_musclconserved_nonperiodic(a, core_params)
+
+def flux_musclconserved_closed(a, core_params):
+	a = closed_pad(a, 2)
+	return flux_musclconserved_nonperiodic(a, core_params)
 
 
 def flux_musclconserved_periodic(a, core_params):
@@ -147,9 +188,7 @@ def flux_musclconserved_periodic(a, core_params):
 	return F_R
 
 
-def flux_musclprimitive_ghost(a, core_params):
-	a = pad(a, 2)
-
+def flux_musclprimitive_nonperiodic(a, core_params):
 	rho = a[0]
 	u = get_u(a, core_params)
 	p = get_p(a, core_params)
@@ -172,6 +211,20 @@ def flux_musclprimitive_ghost(a, core_params):
 
 	F  = flux_roe(aL, aR, core_params)
 	return F
+
+def flux_musclprimitive_ghost(a, core_params):
+	a = ghost_pad(a, 2)
+	return flux_musclprimitive_nonperiodic(a, core_params)
+
+def flux_musclprimitive_open(a, core_params):
+	a = open_pad(a, 2, core_params)
+	return flux_musclprimitive_nonperiodic(a, core_params)
+
+def flux_musclprimitive_closed(a, core_params):
+	a = closed_pad(a, 2)
+	return flux_musclprimitive_nonperiodic(a, core_params)
+
+
 
 
 def flux_musclprimitive_periodic(a, core_params):
@@ -198,10 +251,7 @@ def flux_musclprimitive_periodic(a, core_params):
 	return F_R
 
 
-def flux_musclcharacteristic_ghost(a, core_params):
-	a = pad(a, 2)
-
-
+def flux_musclcharacteristic_nonperiodic(a, core_params):
 	dQ_minus = a[:,1:-1] - a[:, :-2]
 	dQ_plus = a[:, 2:] - a[:, 1:-1]
 
@@ -240,6 +290,19 @@ def flux_musclcharacteristic_ghost(a, core_params):
 	aR = (a - da_j)[:, 1:]
 	F  = flux_roe(aL, aR, core_params)
 	return F
+
+
+def flux_musclcharacteristic_ghost(a, core_params):
+	a = ghost_pad(a, 2)
+	return flux_musclcharacteristic_nonperiodic(a, core_params)
+
+def flux_musclcharacteristic_open(a, core_params):
+	a = open_pad(a, 2, core_params)
+	return flux_musclcharacteristic_nonperiodic(a, core_params)
+
+def flux_musclcharacteristic_closed(a, core_params):
+	a = closed_pad(a, 2)
+	return flux_musclcharacteristic_nonperiodic(a, core_params)
 
 
 def flux_musclcharacteristic_periodic(a, core_params):
@@ -325,6 +388,31 @@ def _time_derivative_euler_ghost(core_params, dt_fn=None):
 	return flux_term
 
 
+def _time_derivative_euler_open(core_params, dt_fn=None):
+	if core_params.flux == Flux.MUSCLCONSERVED:
+		flux_term = lambda a: flux_musclconserved_open(a, core_params)
+	elif core_params.flux == Flux.MUSCLPRIMITIVE:
+		flux_term = lambda a: flux_musclprimitive_open(a, core_params)
+	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
+		flux_term = lambda a: flux_musclcharacteristic_open(a, core_params)
+	else:
+		raise NotImplementedError
+
+	return flux_term
+
+def _time_derivative_euler_closed(core_params, dt_fn=None):
+	if core_params.flux == Flux.MUSCLCONSERVED:
+		flux_term = lambda a: flux_musclconserved_closed(a, core_params)
+	elif core_params.flux == Flux.MUSCLPRIMITIVE:
+		flux_term = lambda a: flux_musclprimitive_closed(a, core_params)
+	elif core_params.flux == Flux.MUSCLCHARACTERISTIC:
+		flux_term = lambda a: flux_musclcharacteristic_closed(a, core_params)
+	else:
+		raise NotImplementedError
+
+	return flux_term
+
+
 def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None, G = None):
 
 	if core_params.bc == BoundaryCondition.GHOST:
@@ -345,6 +433,45 @@ def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None,
 			F_R = F[:, 1:]
 			F_L = F[:, :-1]
 			return (F_L - F_R) / dx
+	elif core_params.bc == BoundaryCondition.OPEN:
+		flux_term = _time_derivative_euler_open(core_params, dt_fn = dt_fn)
+		def dadt(a):
+			nx = a.shape[1]
+			dx = core_params.Lx / nx
+			F = flux_term(a)# (3, nx + 1)
+			if G is not None:
+				assert deta_dt_ratio is not None
+				G_R = G(a, core_params) # (3, nx-1)
+				w = get_w(a, core_params) # (3, nx)
+				diff_w = (w[:,1:] - w[:,:-1])
+				deta_dt_old = jnp.sum(F[:,1:-1] * diff_w) - jnp.sum(F[:, -1] * w[:, -1]) + jnp.sum(F[:, 0] * w[:, 0])
+				deta_dt_bc = get_entropy_flux(get_u_left(core_params), core_params) - get_entropy_flux(get_u_right(core_params), core_params)
+				deta_dt_new =  deta_dt_bc + deta_dt_ratio * (deta_dt_old - deta_dt_bc)
+				denom = jnp.sum(G_R * diff_w)
+				F = F.at[:,1:-1].add((deta_dt_new - deta_dt_old) * G_R / denom)
+			F_R = F[:, 1:]
+			F_L = F[:, :-1]
+			return (F_L - F_R) / dx
+	elif core_params.bc == BoundaryCondition.CLOSED:
+		flux_term = _time_derivative_euler_closed(core_params, dt_fn = dt_fn)
+		def dadt(a):
+			nx = a.shape[1]
+			dx = core_params.Lx / nx
+			F = flux_term(a)# (3, nx + 1)
+			if G is not None:
+				assert deta_dt_ratio is not None
+				G_R = G(a, core_params) # (3, nx-1)
+				w = get_w(a, core_params) # (3, nx)
+				diff_w = (w[:,1:] - w[:,:-1])
+				deta_dt_old = jnp.sum(F[:,1:-1] * diff_w) - jnp.sum(F[:, -1] * w[:, -1]) + jnp.sum(F[:, 0] * w[:, 0])
+				entropy_flux_estimated = 0.0 - 0.0
+				deta_dt_new = deta_dt_ratio * (deta_dt_old - entropy_flux_estimated)
+				denom = jnp.sum(G_R * diff_w)
+				F = F.at[:,1:-1].add((deta_dt_new - deta_dt_old) * G_R / denom)
+			F_R = F[:, 1:]
+			F_L = F[:, :-1]
+			return (F_L - F_R) / dx
+
 	elif core_params.bc == BoundaryCondition.PERIODIC:
 		flux_term = _time_derivative_euler_periodic(core_params, dt_fn = dt_fn)
 		def dadt(a):
