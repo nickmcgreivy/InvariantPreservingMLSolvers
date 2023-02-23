@@ -276,10 +276,10 @@ for i, nx in enumerate(nxs):
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.plot(Ts, jnp.ones(Ts.shape), color='green', label="MUSCL {}x{}".format(nx_exact, nx_exact))
-    ax.plot(Ts, corrs_vanleer_eval[i], color='orange', linestyle='dotted',  label="MUSCL {}x{}".format(nx, nx))
-    ax.plot(Ts, corrs_model_eval[i],  color = 'red', linestyle='dotted', label="ML {}x{}".format(nx, nx))
-    ax.plot(Ts, corrs_model_gs_eval[i],  color = 'blue', linestyle='dotted', label="ML $\ell_2$-decaying {}x{}".format(nx,nx))
-    ax.plot(Ts, corrs_model_ec_eval[i],  color = 'green', linestyle='dotted', label="ML $\ell_2$-decaying & EC {}x{}".format(nx, nx))
+    ax.plot(Ts, corrs_vanleer[i], color='orange', linestyle='dotted',  label="MUSCL {}x{}".format(nx, nx))
+    ax.plot(Ts, corrs_model[i],  color = 'red', linestyle='dotted', label="ML {}x{}".format(nx, nx))
+    ax.plot(Ts, corrs_model_gs[i],  color = 'blue', linestyle='dotted', label="ML $\ell_2$-decaying {}x{}".format(nx,nx))
+    ax.plot(Ts, corrs_model_ec[i],  color = 'green', linestyle='dotted', label="ML $\ell_2$-decaying & EC {}x{}".format(nx, nx))
 
     fig.suptitle('Vorticity Correlation')
 
