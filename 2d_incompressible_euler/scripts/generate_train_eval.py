@@ -42,8 +42,8 @@ from trainingutils import get_loss_fn, get_batch_fn, get_idx_gen, train_model, c
 #########################
 
 
-simname = "fourth"
-train_id = "fourth"
+simname = "first"
+train_id = "first"
 
 
 cfl_safety=0.3
@@ -56,7 +56,7 @@ ic_wavenumber = 2
 
 batch_size= 100
 learning_rate=1e-4
-num_epochs = 16000
+num_epochs = 1000
 kernel_size = 5
 depth = 6
 width = 64
@@ -69,7 +69,7 @@ t_inner = 0.1
 
 t_burnin = 20.0
 nx_exact = ny_exact = 128
-nxs = [32, 64]
+nxs = [32] # [32, 64]
 
 basedir = "/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
 readwritedir = "/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
@@ -149,7 +149,8 @@ for nx in nxs:
 key_data = jax.random.PRNGKey(0)
 key_eval = jax.random.PRNGKey(105)
 simulation_exact = get_simulation(sim_params_exact)
-save_training_data(key_data, sim_params_exact, simulation_exact, t_burnin, t_inner, outer_steps, n_runs, sim_params_ds, simulations_ds, max_velocity=max_velocity, ic_wavenumber=ic_wavenumber)
+
+#save_training_data(key_data, sim_params_exact, simulation_exact, t_burnin, t_inner, outer_steps, n_runs, sim_params_ds, simulations_ds, max_velocity=max_velocity, ic_wavenumber=ic_wavenumber)
 
 
 # In[ ]:
@@ -162,7 +163,7 @@ model = get_model()
 
 i_params = init_params(key_init, model)
 
-
+"""
 for nx in nxs:
     sim_params = get_sim_params(nx, nx)
     idx_fn = lambda key: get_idx_gen(key, ml_params, n_data)
@@ -172,7 +173,7 @@ for nx in nxs:
 
     save_training_params(sim_params, params, losses)
     print(losses)
-
+"""
 
 
 ####################
@@ -182,11 +183,6 @@ for nx in nxs:
 
 t_inner = 0.5
 outer_steps = 20
-
-
-
-
-
 
 
 
