@@ -5,12 +5,12 @@
 
 
 import sys
-sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
-sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
-sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
-#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
-#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
-#sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
+#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
+#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
+#sys.path.append('/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
+sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/ml')
+sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/baselines')
+sys.path.append('/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler/simulate')
 
 
 
@@ -71,10 +71,10 @@ t_burnin = 20.0
 nx_exact = ny_exact = 128
 nxs = [32] # [32, 64]
 
-basedir = "/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
-readwritedir = "/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
-#basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
-#readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
+#basedir = "/home/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
+#readwritedir = "/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/2d_incompressible_euler"
+basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
+readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/2d_incompressible_euler'
 
 #########################
 # END HYPERPARAMS
@@ -264,30 +264,37 @@ corrs = jnp.concatenate([corrs_vanleer[None], corrs_model[None], corrs_model_gs[
 with open('corrs_{}.npy'.format(train_id), 'wb') as f:
     onp.save(f, corrs)
 
+
+
 corrs = onp.load('corrs_{}.npy'.format(train_id))
 corrs_vanleer, corrs_model, corrs_model_gs, corrs_model_ec = corrs
 
 
+colors = ["#008000", "#000080", "#0F4D92", "#0F4D92", "#924D0F", "#924D0F"]
+
 fs = 16
 Ts = jnp.arange(outer_steps) * t_inner
+
+tf = outer_steps//2 + 1
     
+lw = 4
 for i, nx in enumerate(nxs):
 
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(Ts, jnp.ones(Ts.shape), color='green', label="MUSCL {}x{}".format(nx_exact, nx_exact))
-    ax.plot(Ts, corrs_vanleer[i], color='orange', linestyle='dotted',  label="MUSCL {}x{}".format(nx, nx))
-    ax.plot(Ts, corrs_model[i],  color = 'red', linestyle='dotted', label="ML {}x{}".format(nx, nx))
-    ax.plot(Ts, corrs_model_gs[i],  color = 'blue', linestyle='dotted', label="ML $\ell_2$-decaying {}x{}".format(nx,nx))
-    ax.plot(Ts, corrs_model_ec[i],  color = 'green', linestyle='dotted', label="ML $\ell_2$-decaying & EC {}x{}".format(nx, nx))
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.plot(Ts[:tf], jnp.ones(Ts.shape)[:tf], color="#008000", label="MUSCL {}x{}".format(nx_exact, nx_exact), linewidth=lw)
+    ax.plot(Ts[:tf], corrs_vanleer[i][:tf], color="#0152F6",  label="MUSCL {}x{}".format(nx, nx), linewidth=lw)
+    ax.plot(Ts[:tf], corrs_model[i][:tf],  color = 'black',  label="ML {}x{}".format(nx, nx), linewidth=lw/1.2)
+    ax.plot(Ts[:tf], corrs_model_gs[i][:tf],  color = "orange", linestyle='dotted', label="ML {}x{}\n$\ell_2$-decaying".format(nx,nx), linewidth=lw*1.2)
+    ax.plot(Ts[:tf], corrs_model_ec[i][:tf],  color =  'red', linestyle='dotted', label="ML {}x{}\n$\ell_2$-decaying &\nEnergy Conserving".format(nx, nx), linewidth=lw)
 
-    fig.suptitle('Vorticity Correlation')
+    fig.suptitle('Vorticity Correlation', fontsize=fs)
 
     ax.set_ylim([0.00,1.02])
-    ax.set_xticks([0,10,20.0])
+    ax.set_xticks([0,10])
     ax.set_yticks([0.0,0.5,1.0])
     ax.set_yticklabels([r'0', r'0.5', r'1.0'], fontsize=fs)
-    ax.set_xticklabels([r'$t=0$',r'$t=10$',r'$t=20$'], fontsize=fs)
+    ax.set_xticklabels([r'$t=0$',r'$t=10$'], fontsize=fs)
     ax.grid(visible=False)
     ax.set_facecolor('white')
     ax.spines['bottom'].set_visible(True)
@@ -295,12 +302,13 @@ for i, nx in enumerate(nxs):
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     
-    fig.legend(fontsize=fs)
+    fig.legend(fontsize=fs * 0.85, loc=(0.13,0.12), frameon=False)
 
 
 
     plt.savefig('{}/corr_{}_{}.png'.format(plot_dir, nx, train_id))
     plt.savefig('{}/corr_{}_{}.eps'.format(plot_dir, nx, train_id))
+    plt.show()
     plt.close()
 
 
