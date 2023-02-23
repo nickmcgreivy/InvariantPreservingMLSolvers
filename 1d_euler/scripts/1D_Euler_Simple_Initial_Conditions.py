@@ -16,6 +16,8 @@
 import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
 readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
+#basedir = '/home/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
+#readwritedir = 'scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
 
 sys.path.append('{}/core'.format(basedir))
 sys.path.append('{}/simulate'.format(basedir))
@@ -161,25 +163,25 @@ gamma = 1.4
 
 flux_exact = 'musclcharacteristic'
 flux_learned = 'learned'
-n_runs = 10000
+n_runs = 10 #10000
 t_inner_train = 0.01
 Tf = 0.2
-BC = 'ghost'
+BC = 'open'
 sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
 DEPTH=5
 
-nxs = [8, 16, 32, 64]
+nxs = [4, 8, 16, 32]
 nx_exact = 256
 
 key_data = jax.random.PRNGKey(13)
 key_train = jax.random.PRNGKey(43)
 key_init_params = jax.random.PRNGKey(31)
 
-BASEBATCHSIZE = 64
+BASEBATCHSIZE = 1 #64
 WIDTH = 32
 learning_rate = 1e-4
-NUM_TRAINING_ITERATIONS = 200000
+NUM_TRAINING_ITERATIONS = 10 #200000
 
 ###### END HYPERPARAMS
 
@@ -221,6 +223,11 @@ def training_params(nx):
 nx = 100
 key_test = jax.random.PRNGKey(4)
 f_init = f_init_sum_of_amplitudes(core_params_exact, key_test, **kwargs_init)
+
+aL = f_init(0.0, 0.0)
+aR = f_init(Lx, 0.0)
+sim_exact = EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
+
 a0 = get_a0(f_init, core_params_exact, nx)
 t_inner = 0.02
 outer_steps = 10
@@ -238,6 +245,8 @@ plot_trajectory(trajectory, core_params_exact, maxs=maxs, mins=mins)
 
 # In[ ]:
 
+
+sim_exact = lambda aL, aR: EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
 
 init_fn = lambda key: f_init_sum_of_amplitudes(core_params_exact, key, **kwargs_init)
 save_training_data(key_data, init_fn, core_params_exact, sim_params, sim_exact, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs)
@@ -300,13 +309,15 @@ for i, nx in enumerate(nxs):
     f_init = f_init_sum_of_amplitudes(core_params_exact, key_plot_eval, **kwargs_init)
     a0 = get_a0(f_init, core_params_exact, nx)
     a0_exact = get_a0(f_init, core_params_exact, nx_exact)
+    aL = f_init(0.0, 0.0)
+    aR = f_init(Lx, 0.0)
     UP = 1000
     t_inner = 0.05 / UP
     outer_steps = 3 * UP
     
     # exact trajectory
     
-    sim_exact = EulerFVSim(core_params_exact, sim_params)
+    sim_exact = EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
     inner_fn_exact = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
     trajectory_fn_exact = get_trajectory_fn(inner_fn_exact, outer_steps)
     trajectory_exact = trajectory_fn_exact(a0_exact)
@@ -317,14 +328,14 @@ for i, nx in enumerate(nxs):
     trajectory_characteristic = trajectory_fn_exact(a0)
     
     
-    sim_model = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving = False)
+    sim_model = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving = False, aL=aL, aR=aR)
     inner_fn_model = get_inner_fn(sim_model.step_fn, sim_model.dt_fn, t_inner)
     trajectory_fn_model = get_trajectory_fn(inner_fn_model, outer_steps)
     trajectory_model = trajectory_fn_model(a0)
     
     
     # params with invariant preserving
-    sim_model_gs = EulerFVSim(core_params_learned, sim_params_low_cfl, model=model, params=params, invariant_preserving=True)
+    sim_model_gs = EulerFVSim(core_params_learned, sim_params_low_cfl, model=model, params=params, invariant_preserving=True, aL=aL, aR=aR)
     inner_fn_model_gs = get_inner_fn(sim_model_gs.step_fn, sim_model_gs.dt_fn, t_inner)
     trajectory_fn_model_gs = get_trajectory_fn(inner_fn_model_gs, outer_steps)
     trajectory_model_gs = trajectory_fn_model_gs(a0)
@@ -372,9 +383,7 @@ t_inner = 0.01
 outer_steps = 11
     
 # exact trajectory setup
-sim_exact = EulerFVSim(core_params_exact, sim_params)
-inner_fn_exact = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
-trajectory_fn_exact = jit(get_trajectory_fn(inner_fn_exact, outer_steps))
+
 
 convert_trajectory_fn = vmap(convert_FV_representation, (0, None, None))
 
@@ -383,9 +392,10 @@ def RMSE_trajectory(traj, traj_ex):
 
 # trajectory setup
 
-@partial(jit, static_argnums=(2,))
-def get_trajectory_ML(a0, params, invariant_preserving=False):
-    sim_model = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving = invariant_preserving)
+@partial(jit, static_argnums=(4,5,))
+def get_trajectory_ML(a0, aL, aR, params, invariant_preserving=False, cfl_safety=0.3):
+    sim_params = get_sim_params(name=sim_id, cfl_safety=cfl_safety, rk = 'ssp_rk3')
+    sim_model = EulerFVSim(core_params_learned, sim_params, model=model, params=params, invariant_preserving = invariant_preserving, aL=aL, aR=aR)
     inner_fn_model = get_inner_fn(sim_model.step_fn, sim_model.dt_fn, t_inner)
     trajectory_fn_model = get_trajectory_fn(inner_fn_model, outer_steps)
     return trajectory_fn_model(a0)
@@ -401,8 +411,13 @@ for n in range(N_test):
     key, _ = jax.random.split(key)
     
     f_init = f_init_sum_of_amplitudes(core_params_exact, key, **kwargs_init)
+    aL = f_init(0.0, 0.0)
+    aR = f_init(Lx, 0.0)
     a0_exact = get_a0(f_init, core_params_exact, nx_exact)
 
+    sim_exact = EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
+    inner_fn_exact = get_inner_fn(sim_exact.step_fn, sim_exact.dt_fn, t_inner)
+    trajectory_fn_exact = jit(get_trajectory_fn(inner_fn_exact, outer_steps))
     trajectory_exact = trajectory_fn_exact(a0_exact)
     
     for i, nx in enumerate(nxs):
@@ -411,6 +426,7 @@ for n in range(N_test):
         
         _, params = load_training_params(nx, sim_params, training_params(nx), model)
         
+    
         a0 = convert_FV_representation(a0_exact, nx, core_params_exact.Lx)
         
         # exact trajectory
@@ -420,15 +436,15 @@ for n in range(N_test):
         trajectory_muscl = trajectory_fn_exact(a0)
         
         # ML trajectory
-        trajectory_ML = get_trajectory_ML(a0, params)
+        trajectory_ML = get_trajectory_ML(a0, aL, aR, params)
         
         # Invariant-preserving ML trajectory
-        trajectory_invariant_ML = get_trajectory_ML(a0, params, invariant_preserving=True)
+        trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.05)
         
         error_muscl = RMSE_trajectory(trajectory_muscl, trajectory_exact_ds)
         error_ml = RMSE_trajectory(trajectory_ML, trajectory_exact_ds)
         error_ml_gs = RMSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
-        if not np.isnan(error_ml):
+        if not onp.isnan(error_ml) and error_ml < 1.0:
             errors[i, 0] += error_muscl
             errors[i, 1] += error_ml
             errors[i, 2] += error_ml_gs
@@ -441,14 +457,14 @@ print("number nan: {}".format(N_test - num_not_nan))
 # In[ ]:
 
 
-with open('mses_simple.npy', 'wb') as f:
+with open('mses_simple_{}.npy'.format(BC), 'wb') as f:
     onp.save(f, errors)
 
 
 # In[ ]:
 
 
-mses = onp.load('mses_simple_ghost.npy')
+mses = onp.load('mses_simple_{}.npy'.format(BC))
 mses = onp.nan_to_num(mses, nan=1e5)
 print(mses)
 
@@ -456,17 +472,16 @@ print(mses)
 # In[ ]:
 
 
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 
 
-fig, axs = plt.subplots(1, 1, figsize=(7, 3.25))
+fig, axs = plt.subplots(1, 1, figsize=(7, 3.5))
 axs.spines['top'].set_visible(False)
 axs.spines['right'].set_visible(False)
 linewidth = 3
 
-labels = ["MUSCL", "ML", "ML (Stabilized)"]
+labels = ["MUSCL", "ML", "ML (Positivity- &\nEntropy-Preserving)"]
 colors = ["blue", "red", "green", "green"]
 linestyles = ["solid", "solid", "dashed", "solid"]
 
@@ -474,12 +489,12 @@ for k in range(3):
     plt.loglog(nxs, mses[:,k], label = labels[k], color=colors[k], linewidth=linewidth, linestyle=linestyles[k])
 
 axs.set_xticks(list(reversed(nxs)))
-axs.set_xticklabels(["N=64", "N=32", "N=16", "N=8"], fontsize=18)
-axs.set_yticks([1e-4, 1e-3, 1e-2])
-axs.set_yticklabels(["$10^{-4}$", "$10^{-3}$", "$10^{-2}$",], fontsize=18)
+axs.set_xticklabels(["N=32", "N=16", "N=8", "N=4"], fontsize=18)
+axs.set_yticks([1e-4, 1e-3, 1e-2, 1e-1])
+axs.set_yticklabels(["$10^{-4}$", "$10^{-3}$", "$10^{-2}$", "$10^{-1}$"], fontsize=18)
 axs.minorticks_off()
 axs.set_ylabel("Normalized MSE", fontsize=18)
-axs.text(0.2, 0.95, '$t=0.1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
+#axs.text(0.15, 0.9, '$t=0.1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
 
 
 handles = []
@@ -494,13 +509,15 @@ for k in range(3):
             linestyle=linestyles[k]
         )
     )
-axs.legend(handles=handles,loc=(0.45,0.55) , prop={'size': 15}, frameon=False)
-plt.ylim([1e-5, 1e-1+1e-2])
+axs.legend(handles=handles,loc=(0.4,0.45) , prop={'size': 18}, frameon=True)
+plt.ylim([5e-4, 4e-1])
+fig.suptitle('1D Compressible Euler, Ghost Boundary Conditions', fontsize=18)
+
+
 fig.tight_layout()
 
-
-#plt.savefig('mse_vs_nx_euler.png')
-#plt.savefig('mse_vs_nx_euler.eps')
+#plt.savefig('mse_vs_nx_euler_{}.png'.format(BC))
+#plt.savefig('mse_vs_nx_euler_{}.eps'.format(BC))
 plt.show()
 
 

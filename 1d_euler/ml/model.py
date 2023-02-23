@@ -61,6 +61,14 @@ class LearnedFlux(nn.Module):
 				kernel_out=self.kernel_out,
 				N_out=3,
 			)
+		elif self.boundary_conditions == BoundaryCondition.OPEN:
+			self.conv = CNNGhost1D(self.features,
+				kernel_size=self.kernel_size,
+				kernel_out=self.kernel_out,
+				N_out=3,
+			)
+		else:
+			raise Exception
 
 	def __call__(self, inputs):
 		x = jnp.transpose(inputs, (1, 0)) # (nx, 3)

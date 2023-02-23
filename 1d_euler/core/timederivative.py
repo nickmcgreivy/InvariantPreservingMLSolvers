@@ -16,12 +16,12 @@ def pad_open(a, aL, aR, core_params):
 	rho = a[0]
 	rhov = a[1]
 	E = a[2]
-	rho = jnp.pad(rho, (n, 0), mode=mode, constant_values=(aL[0],))
-	rho = jnp.pad(rho, (0, n), mode=mode, constant_values=(aR[0],))
-	rhov = jnp.pad(rhov, (n, 0), mode=mode, constant_values=(aL[1],))
-	rhov = jnp.pad(rhov, (0, n), mode=mode, constant_values=(aR[1],))
-	E = jnp.pad(E, (n, 0), mode=mode, constant_values=(aL[2],))
-	E = jnp.pad(E, (0, n), mode=mode, constant_values=(aR[2],))
+	rho = jnp.pad(rho, (2, 0), mode=mode, constant_values=(aL[0],))
+	rho = jnp.pad(rho, (0, 2), mode=mode, constant_values=(aR[0],))
+	rhov = jnp.pad(rhov, (2, 0), mode=mode, constant_values=(aL[1],))
+	rhov = jnp.pad(rhov, (0, 2), mode=mode, constant_values=(aR[1],))
+	E = jnp.pad(E, (2, 0), mode=mode, constant_values=(aL[2],))
+	E = jnp.pad(E, (0, 2), mode=mode, constant_values=(aR[2],))
 	return jnp.concatenate([rho[None], rhov[None], E[None]], axis=0)
 
 def pad_ghost(a):
@@ -252,7 +252,7 @@ def flux_musclcharacteristic_ghost(a, core_params):
 	F  = flux_roe(aL, aR, core_params)
 	return F
 
-def flux_musclcharacteristic_open(a, aL, aR core_params):
+def flux_musclcharacteristic_open(a, aL, aR, core_params):
 	a = pad_open(a, aL, aR, core_params)
 
 

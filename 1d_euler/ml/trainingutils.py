@@ -25,10 +25,12 @@ def create_training_data(sim_params, core_params, nxs, N):
 		)
 		f.create_dataset("a", (N, 3, nx), dtype="float64")
 		f.create_dataset("dadt", (N, 3, nx), dtype="float64")
+		f.create_dataset("aL", (N, 3), dtype="float64")
+		f.create_dataset("aR", (N, 3), dtype="float64")
 		f.close()
 
 
-def write_trajectory(sim_params, core_params, nx, trajectory, dadt_trajectory, n, outer_steps):
+def write_trajectory(sim_params, core_params, nx, trajectory, dadt_trajectory, n, outer_steps, aL, aR):
 	f = h5py.File(
 		"{}/data/traindata/{}_nx{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx),
 		"r+",
@@ -36,29 +38,40 @@ def write_trajectory(sim_params, core_params, nx, trajectory, dadt_trajectory, n
 	j_begin = n * outer_steps
 	j_end = (n+1) * outer_steps
 	f["a"][j_begin:j_end] = trajectory
+	f["aL"][j_begin:j_end] = aL
+	f["aR"][j_begin:j_end] = aR
 	f["dadt"][j_begin:j_end] = dadt_trajectory
 	f.close()
 
 
-def save_training_data(key, init_fn, core_params, sim_params, sim, t_inner, outer_steps, n_runs, nx_exact, nxs, **kwargs):
-
-	inner_fn = get_inner_fn(sim.step_fn, sim.dt_fn, t_inner)
-	rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
-	time_derivative_fn = jax.vmap(jax.jit(sim.F))
+def save_training_data(key, init_fn, core_params, sim_params, sim_fn, t_inner, outer_steps, n_runs, nx_exact, nxs, **kwargs):
 
 	# initialize files for saving training data
 	create_training_data(sim_params, core_params, nxs, outer_steps * n_runs)
+
+	@jax.jit
+	def get_trajectory(key):
+		f_init = init_fn(subkey)
+		a0 = get_a0(f_init, core_params, nx_exact)
+		aL = f_init(0.0, 0.0)
+		aR = f_init(core_params.Lx, 0.0)
+
+		sim = sim_fn(aL, aR)
+		inner_fn = get_inner_fn(sim.step_fn, sim.dt_fn, t_inner)
+		rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
+		time_derivative_fn = jax.vmap(jax.jit(sim.F))
+		exact_trajectory = rollout_fn(a0)
+		dadt_trajectory = time_derivative_fn(exact_trajectory)
+		return exact_trajectory, dadt_trajectory, aL, aR
+
 
 	for n in range(n_runs):
 		print(n)
 		key, subkey = jax.random.split(key)
 		# init solution
-		f_init = init_fn(subkey)
-		a0 = get_a0(f_init, core_params, nx_exact)
-		# get exact trajectory
-		trajectory = rollout_fn(a0)
+
 		# get dadt along trajectory
-		dadt_trajectory = time_derivative_fn(trajectory)
+		trajectory, dadt_trajectory, aL, aR = get_trajectory(subkey)
 
 		for j, nx in enumerate(nxs):
 			convert_fn = jax.jit(jax.vmap(lambda a: convert_FV_representation(a, nx, core_params.Lx)))
@@ -66,7 +79,7 @@ def save_training_data(key, init_fn, core_params, sim_params, sim, t_inner, oute
 			trajectory_ds = convert_fn(trajectory)
 			dadt_trajectory_exact_ds = convert_fn(dadt_trajectory)
 
-			write_trajectory(sim_params, core_params, nx, trajectory_ds, dadt_trajectory_exact_ds, n, outer_steps)
+			write_trajectory(sim_params, core_params, nx, trajectory_ds, dadt_trajectory_exact_ds, n, outer_steps, aL, aR)
 
 
 def save_training_params(nx, sim_params, training_params, params, losses):
@@ -125,27 +138,29 @@ def get_batch_fn(core_params, sim_params, training_params, nx):
 	
 	trajectory = jnp.asarray(f["a"][:training_params.n_data])
 	dadt = jnp.asarray(f["dadt"][:training_params.n_data])
+	aL = jnp.asarray(f["aL"][:training_params.n_data])
+	aR = jnp.asarray(f["aR"][:training_params.n_data])
 	f.close()
 
 	@jax.jit
 	def batch_fn(idxs):
-		return {"a": trajectory[idxs], "dadt": dadt[idxs]}
+		return {"a": trajectory[idxs], "dadt": dadt[idxs], "aL": aL[idxs], "aR": aR[idxs]}
 
 	return batch_fn
 
 
 def get_loss_fn(model, core_params, regularization = 0.0): 
 
-	dadt_fn = lambda a, params: time_derivative_FV_1D_euler(core_params, model=model, params=params)(a)
+	dadt_fn = lambda a, aL, aR, params: time_derivative_FV_1D_euler(core_params, model=model, params=params)(a, aL, aR)
 
 	model_flux_fn = lambda a, params: model_flux_FV_1D_euler(a, model, params)
 
-	batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, None), out_axes=0)
+	batch_dadt_fn = jax.vmap(dadt_fn, in_axes=(0, 0, 0, None), out_axes=0)
 	vmap_one_norm_grad_f_model = jax.vmap(lambda a, params: one_norm_grad_f_model(a, params, model_flux_fn), (0, None))
 
 	@jax.jit
 	def loss_fn(params, batch):
-		dadt = batch_dadt_fn(batch["a"], params)
+		dadt = batch_dadt_fn(batch["a"], batch["aL"], batch["aR"], params)
 		if regularization > 0.0:
 			reg_loss = regularization * jnp.mean(vmap_one_norm_grad_f_model(batch["a"], params))
 		else:
