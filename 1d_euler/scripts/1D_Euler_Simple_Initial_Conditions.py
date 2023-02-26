@@ -163,10 +163,10 @@ gamma = 1.4
 
 flux_exact = 'musclcharacteristic'
 flux_learned = 'learned'
-n_runs = 100
+n_runs = 10000
 t_inner_train = 0.01
 Tf = 0.2
-BC = 'periodic'
+BC = 'open'
 sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
 DEPTH=5
@@ -181,7 +181,7 @@ key_init_params = jax.random.PRNGKey(31)
 BASEBATCHSIZE = 64
 WIDTH = 32
 learning_rate = 1e-4
-NUM_TRAINING_ITERATIONS = 2000
+NUM_TRAINING_ITERATIONS = 100000
 
 ###### END HYPERPARAMS
 
@@ -218,6 +218,7 @@ def training_params(nx):
 sim_exact = lambda aL, aR: EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
 
 init_fn = lambda key: f_init_sum_of_amplitudes(core_params_exact, key, **kwargs_init)
+"""
 save_training_data(key_data, init_fn, core_params_exact, sim_params, sim_exact, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs)
 
 
@@ -230,6 +231,7 @@ for i, nx in enumerate(nxs):
     loss_fn = get_loss_fn(model, core_params_learned)
     losses, params = train_model(model, i_params, training_params(nx), key_train, idx_fn, batch_fn, loss_fn)
     save_training_params(nx, sim_params, training_params(nx), params, losses)
+"""
 
 
 
@@ -241,10 +243,10 @@ for i, nx in enumerate(nxs):
 
 
 
-
-N_test = 2
+N_test = 50
 
 key = jax.random.PRNGKey(45)
+#key = jax.random.PRNGKey(46)
 
 t_inner = 0.01
 outer_steps = 11
@@ -306,7 +308,7 @@ for n in range(N_test):
         trajectory_ML = get_trajectory_ML(a0, aL, aR, params)
         
         # Invariant-preserving ML trajectory
-        trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.05)
+        trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.3)
         
         error_muscl = MSE_trajectory(trajectory_muscl, trajectory_exact_ds)
         error_ml = MSE_trajectory(trajectory_ML, trajectory_exact_ds)
