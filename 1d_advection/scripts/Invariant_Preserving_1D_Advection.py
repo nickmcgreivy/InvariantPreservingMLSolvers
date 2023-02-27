@@ -1,12 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In this Jupyter notebook, we will train a machine learned FV solver to solve the 1D advection equation at reduced resolution. Our objective is to train some ML models and plot their accuracy relative to other solvers.
-
-# In[ ]:
-
-
-# setup paths
 import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_advection'
 readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_advection'

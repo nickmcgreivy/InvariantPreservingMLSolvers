@@ -1,19 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In this Jupyter notebook, we will train a machine learned FV solver to solve the 1D Burgers' equation at reduced resolution. Our objective is to study whether is it better to use the a linear flux correction or non-linear stencil for for the ML flux.
-# 
-# The linear stencil is given by
-# 
-# $$f_{j+1/2} = \sum_{k} s_{j+1/2,k} f_{j+k}$$
-# 
-# where $f_{j+k} = u_{j+k}^2/2$. The non-linear stencil is given by
-# 
-# $$f_{j+1/2} = u_{j+1/2}^2/2, \hspace{0.5cm} u_{j+1/2} = \sum_{k} s_{j+1/2, k} u_{j+k}.$$
-
-# In[ ]:
-
-
 # setup paths
 import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_burgers'
@@ -182,12 +166,6 @@ def get_model(core_params, stencil_params, delta=True, diffusion=False):
         return LearnedStencilDiffusion(features, stencil_params.kernel_size, stencil_params.kernel_out, stencil_params.stencil_width, delta)
 
 
-# ### Finite Volume
-# 
-# ##### Training Loop
-# 
-# First, we will generate the data.
-
 # In[ ]:
 
 
@@ -202,6 +180,7 @@ simname = 'reproduce'
 n_runs = 800
 datapoints_per_run = 10
 time_between_datapoints = 0.5
+t_warmup = 5.0
 
 nx_exact = 512
 training_steps = 40000
@@ -267,7 +246,7 @@ forcing_fn = forcing_func_sum_of_modes(core_params_weno.Lx, **kwargs_forcing)
 # In[ ]:
 
 
-save_training_data(key, init_fn, forcing_fn, core_params_weno, sim_params, sim_weno, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs, delta=delta)
+save_training_data(key, init_fn, forcing_fn, core_params_weno, sim_params, sim_weno, t_warmup, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs, delta=delta)
 
 
 # In[ ]:
@@ -302,102 +281,7 @@ for i, nx in enumerate(nxs):
 # In[ ]:
 
 
-"""
-print("Equation is 1D Burgers")
-for i, nx in enumerate(nxs):
-    losses, _ = load_training_params(nx, sim_params, training_params(nx), model)
-    plt.plot(losses, label=nx)
-    print("nx is {}, average loss is {}".format(nx, (losses)))
-plt.ylim([0,0.001])
-plt.legend()
-plt.show()
-"""
-
-
-# In[ ]:
-
-
-"""
-# pick a key that gives something nice
-key = jax.random.PRNGKey(29)
-
-key1, key2 = jax.random.split(key)
-
-
-for i, nx in enumerate(nxs):
-    print("nx is {}".format(nx))
-    f_init = get_initial_condition_fn(core_params_weno, 'zeros', key=key1, **kwargs_init)
-    f_forcing = forcing_fn(key2)
-    t0 = 0.0
-    a0 = get_a0(f_init, core_params_weno, nx)
-    a0_exact = get_a0(f_init, core_params_weno, nx_exact)
-    x0 = (a0, t0)
-    x0_exact = (a0_exact, t0)
-    
-    t_inner = 2.0
-    outer_steps = 10
-    
-    # Weno
-    step_fn = lambda a, t, dt: sim_weno.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn = get_inner_fn(step_fn, sim_weno.dt_fn, t_inner)
-    trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
-    trajectory_weno, _ = trajectory_fn(x0)
-
-    # exact trajectory
-    trajectory_exact, _ = trajectory_fn(x0_exact)
-    trajectory_exact_ds = vmap(convert_FV_representation, (0, None, None), 0)(trajectory_exact, nx, core_params_weno.Lx)
-    
-    
-    # Godunov
-    step_fn = lambda a, t, dt: sim_god.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn = get_inner_fn(step_fn, sim_god.dt_fn, t_inner)
-    trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
-    trajectory, _ = trajectory_fn(x0)
-
-    # Godunov Bad
-    step_fn = lambda a, t, dt: sim_god_bad.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn = get_inner_fn(step_fn, sim_god_bad.dt_fn, t_inner)
-    trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
-    trajectory_godunov_bad, _ = trajectory_fn(x0)
-    
-    # Weno Bad
-    step_fn = lambda a, t, dt: sim_weno_bad.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn = get_inner_fn(step_fn, sim_weno_bad.dt_fn, t_inner)
-    trajectory_fn = get_trajectory_fn(inner_fn, outer_steps)
-    trajectory_weno_bad, _ = trajectory_fn(x0)
-    
-    
-    # with params
-    _, params = load_training_params(nx, sim_params, training_params(nx), model)
-    sim_model = BurgersFVSim(core_params, sim_params, model=model, params=params, delta=delta, omega_max = omega_max)
-    step_fn_model = lambda a, t, dt: sim_model.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn_model = get_inner_fn(step_fn_model, sim_model.dt_fn, t_inner)
-    trajectory_fn_model = get_trajectory_fn(inner_fn_model, outer_steps)
-    trajectory_model, _ = trajectory_fn_model(x0)
-
-    # with gs
-    sim_model_gs = BurgersFVSim(core_params_learned, sim_params, model=model, params=params, global_stabilization = True, delta=delta, omega_max = omega_max)
-    step_fn_model_gs = lambda a, t, dt: sim_model_gs.step_fn(a, t, dt, forcing_func = f_forcing)
-    inner_fn_model_gs = get_inner_fn(step_fn_model_gs, sim_model_gs.dt_fn, t_inner)
-    trajectory_fn_model_gs = get_trajectory_fn(inner_fn_model_gs, outer_steps)
-    trajectory_model_gs, _ = trajectory_fn_model_gs(x0)    
-    
-    
-    plot_multiple_fv_trajectories([trajectory_weno_bad, trajectory_model, trajectory_exact_ds], core_params_weno, t_inner)
-    plt.ylim([-1.5, 1.5])
-    plt.show()
-    
-    plt.plot(l2_norm_trajectory(trajectory))
-    plt.plot(l2_norm_trajectory(trajectory_model))
-    plt.plot(l2_norm_trajectory(trajectory_exact_ds))
-    plt.show()
-"""
-
-
-# In[ ]:
-
-
-N = 50
+N = 100
 
 mae_weno = onp.zeros(len(nxs))
 mae_god = onp.zeros(len(nxs))
@@ -413,7 +297,7 @@ def mae_loss(v, v_ex):
 
 t_inner = 0.1
 outer_steps = 150
-outer_steps_warmup = 0
+outer_steps_warmup = int(t_warmup / t_inner)
 key = jax.random.PRNGKey(16)
 
     
@@ -430,7 +314,7 @@ for n in range(N):
     step_fn = lambda a, t, dt: sim_weno.step_fn(a, t, dt, forcing_func = f_forcing)
     inner_fn = get_inner_fn(step_fn, sim_weno.dt_fn, t_inner)
     
-    trajectory_fn_warmup = get_trajectory_fn(inner_fn, outer_steps_warmup)
+    trajectory_fn_warmup = get_trajectory_fn(inner_fn, outer_steps_warmup, start_with_input=False)
     trajectory_fn_weno = get_trajectory_fn(inner_fn, outer_steps)
     
     
@@ -440,9 +324,9 @@ for n in range(N):
     x0_init = (a0_init, t0_init)
 
     #warmup
-    #trajectory_exact, trajectory_t = trajectory_fn_warmup(x0_init)
-    a0_exact = a0_init #trajectory_exact[-1]
-    t0 = t0_init #trajectory_t[-1]
+    trajectory_warmup, trajectory_t = trajectory_fn_warmup(x0_init)
+    a0_exact = trajectory_exact[-1]
+    t0 = trajectory_t[-1]
     x0_exact = (a0_exact, t0)
     
     # exact trajectory
@@ -605,13 +489,5 @@ axs.legend(handles=handles,loc=(0.98,0.1) , prop={'size': 16}, frameon=False)
 fig.tight_layout()
 
 
-#plt.savefig('burgers_mse_vs_nx_n1.png')
-#plt.savefig('burgers_mse_vs_nx_n1.eps')
-plt.show()
-
-
-# In[ ]:
-
-
-
-
+plt.savefig('burgers_mse_vs_nx.png')
+plt.savefig('burgers_mse_vs_nx.eps')
