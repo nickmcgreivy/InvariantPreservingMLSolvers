@@ -51,7 +51,7 @@ def write_trajectory(sim_params, core_params, nx, a_trajectory, t_trajectory, da
 	f.close()
 
 
-def save_training_data(key, init_fn, forcing_fn, core_params, sim_params, sim, t_inner, outer_steps, n_runs, nx_exact, nxs, delta=True, **kwargs):
+def save_training_data(key, init_fn, forcing_fn, core_params, sim_params, sim, t_warmup, t_inner, outer_steps, n_runs, nx_exact, nxs, delta=True, **kwargs):
 
 
 	# initialize files for saving training data
@@ -67,10 +67,18 @@ def save_training_data(key, init_fn, forcing_fn, core_params, sim_params, sim, t
 		t0 = 0.0
 		x0 = (a0, t0)
 
+		outer_steps_warmup = int(t_warmup / t_inner)
+
 		step_fn = lambda a, t, dt: sim.step_fn(a, t, dt, forcing_func = f_forcing)
 		inner_fn = get_inner_fn(step_fn, sim.dt_fn, t_inner)
 		rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps, start_with_input=True))
 
+		trajectory_fn_warmup = jax.jit(get_trajectory_fn(inner_fn, outer_steps_warmup, start_with_input=False))
+
+		# get warmup trajectory
+		trajectory_warmup, trajectory_t_warmup = trajectory_fn_warmup(x0)
+		x0 = (trajectory_warmup[-1], trajectory_t_warmup[-1])
+		
 		# get exact trajectory
 		trajectory, trajectory_t = rollout_fn(x0)
 		# get dadt along trajectory
