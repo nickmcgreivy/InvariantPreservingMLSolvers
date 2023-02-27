@@ -22,3 +22,7 @@ In these figures, we train machine learned solvers to solve various equations, a
 To generate the figure from section 6.1, type `cd 1d_advection/scripts` and edit the paths in `Invariant_Preserving_1D_Advection.py` that say `basedir = ...` and `readwritedir = ...`. Then, type `python Invariant_Preserving_1D_Advection.py`.
 
 To generate the figure from section 6.2, type `cd 1d_burgers/scripts` and edit the paths in `reproduce_hoyer_et_al.py` that say `basedir = ...` and `readwritedir = ...`. Then, type `python reproduce_hoyer_et_al.py`.
+
+To generate the figure from section 6.3, type 
+
+To generate the figure from section 6.4, type `cd 1d_euler/scripts` and edit the paths in in `1D_Euler_Simple_Initial_Conditions.py` that say `basedir = ...` and `readwritedir = ...`. Then, edit the boundary condition to either `periodic` or `open` (dirichlet) by editing the line `BC = ...`. Then, type `python 1D_Euler_Simple_Initial_Conditions.py`.

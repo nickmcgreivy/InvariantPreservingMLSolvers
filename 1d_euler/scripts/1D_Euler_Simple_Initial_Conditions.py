@@ -1,24 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In this Jupyter notebook, we will train a machine learned FV solver to solve the 1D euler equations at reduced resolution. Our objective is to first study how and whether an ML model can learn to solve these equations, then to study whether global stabilization ensures entropy increase.
-
 # In[ ]:
 
 
+basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
+readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
 
-
-
-# In[ ]:
-
-
-# setup paths
 import sys
-#basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
-#readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/1d_euler'
-basedir = '/home/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
-readwritedir = '/scratch/gpfs/mcgreivy/InvariantPreservingMLSolvers/1d_euler'
-
 sys.path.append('{}/core'.format(basedir))
 sys.path.append('{}/simulate'.format(basedir))
 sys.path.append('{}/ml'.format(basedir))
@@ -166,7 +155,7 @@ flux_learned = 'learned'
 n_runs = 10000
 t_inner_train = 0.01
 Tf = 0.2
-BC = 'open'
+BC = 'periodic'
 sim_id = "euler_{}_simple".format(BC)
 train_id = "euler_{}_simple".format(BC)
 DEPTH=5
@@ -215,14 +204,23 @@ def training_params(nx):
     return get_training_params(n_data, **kwargs_train_FV, num_epochs = num_epochs, batch_size=batch_size, learning_rate = learning_rate)
 
 
+# In[ ]:
+
+
 sim_exact = lambda aL, aR: EulerFVSim(core_params_exact, sim_params, aL=aL, aR=aR)
 
 init_fn = lambda key: f_init_sum_of_amplitudes(core_params_exact, key, **kwargs_init)
-"""
 save_training_data(key_data, init_fn, core_params_exact, sim_params, sim_exact, t_inner_train, outer_steps_train, n_runs, nx_exact, nxs)
 
 
+# In[ ]:
+
+
 i_params = init_params(key_init_params, model)
+
+
+# In[ ]:
+
 
 for i, nx in enumerate(nxs):
     print(nx)
@@ -231,22 +229,14 @@ for i, nx in enumerate(nxs):
     loss_fn = get_loss_fn(model, core_params_learned)
     losses, params = train_model(model, i_params, training_params(nx), key_train, idx_fn, batch_fn, loss_fn)
     save_training_params(nx, sim_params, training_params(nx), params, losses)
-"""
 
 
-
-
-
-
-
-
-
+# In[ ]:
 
 
 N_test = 50
 
 key = jax.random.PRNGKey(45)
-#key = jax.random.PRNGKey(46)
 
 t_inner = 0.01
 outer_steps = 11
@@ -256,8 +246,8 @@ outer_steps = 11
 
 convert_trajectory_fn = vmap(convert_FV_representation, (0, None, None))
 
-def MSE_trajectory(traj, traj_ex):
-    return jnp.mean((traj - traj_ex)**2)
+def RMSE_trajectory(traj, traj_ex):
+    return jnp.sqrt(jnp.mean((traj - traj_ex)**2))
 
 # trajectory setup
 
@@ -308,11 +298,11 @@ for n in range(N_test):
         trajectory_ML = get_trajectory_ML(a0, aL, aR, params)
         
         # Invariant-preserving ML trajectory
-        trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.3)
+        trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.05)
         
-        error_muscl = MSE_trajectory(trajectory_muscl, trajectory_exact_ds)
-        error_ml = MSE_trajectory(trajectory_ML, trajectory_exact_ds)
-        error_ml_gs = MSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
+        error_muscl = RMSE_trajectory(trajectory_muscl, trajectory_exact_ds)
+        error_ml = RMSE_trajectory(trajectory_ML, trajectory_exact_ds)
+        error_ml_gs = RMSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
         if not onp.isnan(error_ml) and error_ml < 1.0:
             errors[i, 0] += error_muscl
             errors[i, 1] += error_ml
@@ -325,13 +315,15 @@ print("number nan: {}".format(N_test - num_not_nan))
 
 # In[ ]:
 
+
 with open('mses_simple_{}.npy'.format(BC), 'wb') as f:
     onp.save(f, errors)
-"""
+
 
 # In[ ]:
 
 
+BC = 'periodic'
 mses = onp.load('mses_simple_{}.npy'.format(BC))
 mses = onp.nan_to_num(mses, nan=1e5)
 print(mses)
@@ -349,7 +341,7 @@ axs.spines['top'].set_visible(False)
 axs.spines['right'].set_visible(False)
 linewidth = 3
 
-labels = ["MUSCL", "ML", "ML (Positivity- &\nEntropy-Preserving)"]
+labels = ["MUSCL", "ML", "ML Invariant\nPreserving"]
 colors = ["blue", "red", "green", "green"]
 linestyles = ["solid", "solid", "dashed", "solid"]
 
@@ -361,9 +353,7 @@ axs.set_xticklabels(["N=32", "N=16", "N=8", "N=4"], fontsize=18)
 axs.set_yticks([1e-4, 1e-3, 1e-2, 1e-1])
 axs.set_yticklabels(["$10^{-4}$", "$10^{-3}$", "$10^{-2}$", "$10^{-1}$"], fontsize=18)
 axs.minorticks_off()
-axs.set_ylabel("Normalized MSE", fontsize=18)
-#axs.text(0.15, 0.9, '$t=0.1$', transform=axs.transAxes, fontsize=18, verticalalignment='top')
-
+axs.set_ylabel("Mean Squared Error", fontsize=18)
 
 handles = []
 for k in range(3):
@@ -377,13 +367,13 @@ for k in range(3):
             linestyle=linestyles[k]
         )
     )
-axs.legend(handles=handles,loc=(0.4,0.45) , prop={'size': 18}, frameon=True)
-plt.ylim([5e-4, 4e-1])
-fig.suptitle('1D Compressible Euler, Ghost Boundary Conditions', fontsize=18)
+axs.legend(handles=handles,loc=(0.52,0.4) , prop={'size': 19}, frameon=False)
+plt.ylim([8e-5, 4e-2])
+fig.suptitle('1D Compressible Euler, Periodic Boundary Conditions', fontsize=18)
 
 
 fig.tight_layout()
-
+print(BC)
 plt.savefig('mse_vs_nx_euler_{}.png'.format(BC))
 plt.savefig('mse_vs_nx_euler_{}.eps'.format(BC))
 plt.show()
@@ -393,4 +383,4 @@ plt.show()
 
 
 
-"""
+
