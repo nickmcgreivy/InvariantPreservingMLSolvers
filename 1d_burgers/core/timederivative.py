@@ -2,7 +2,7 @@ import jax.numpy as jnp
 
 from flux import Flux
 from model import stencil_delta_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers, stencil_flux_FV_1D_burgers_diffusion
-from helper import integrate_f
+from helper import map_f_to_FV
 
 def minmod_3(z1, z2, z3):
 	s = (
@@ -212,7 +212,7 @@ def time_derivative_FV_1D_burgers(core_params, **kwargs):
 		dx = core_params.Lx / nx
 		flux_term = _flux_term_FV_1D_burgers(a, core_params, **kwargs)
 		if forcing_func is not None:
-			forcing_term = integrate_f(forcing_func, t, nx, dx, n = 1)
+			forcing_term = map_f_to_FV(forcing_func, t, nx, dx, n = 1)
 		else:
 			forcing_term = 0.0
 

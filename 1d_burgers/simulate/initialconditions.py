@@ -3,7 +3,7 @@ import jax
 from jax import random
 
 from legendre import generate_legendre
-from helper import map_f_to_DG
+from helper import map_f_to_FV
 
 PI = jnp.pi
 
@@ -13,9 +13,7 @@ def get_a0(f_init, core_params, nx):
 
 def get_a(f_init, t, core_params, nx):
 	dx = core_params.Lx / nx
-	p = 1
-	res = map_f_to_DG(f_init, t, p, nx, dx, generate_legendre(p))
-	return res[:,0]
+	return map_f_to_FV(f_init, t, nx, dx, n=8)
 
 def f_init_sum_of_amplitudes_burgers(Lx, key=jax.random.PRNGKey(0), min_num_modes=1, max_num_modes=6, min_k = 0, max_k = 3, amplitude_max=1.0):
 

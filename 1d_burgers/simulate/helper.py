@@ -144,7 +144,7 @@ def _fixed_quad(f, a, b, n=5):
 
 	x_i = (b + a) / 2 + (b - a) / 2 * xi_i
 	wprime = w * (b - a) / 2
-	return jnp.sum(wprime[:, None] * f(x_i), axis=0)
+	return jnp.sum(wprime * f(x_i))
 
 
 def evalf_1D_right(a):
@@ -237,28 +237,9 @@ def integrate_abs_derivative(a):
 	return jnp.sum(vmap(integrate_abs_deriv_single, (0, None), 0)(a, poly_eval))
 
 
-def map_f_to_DG(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
-	"""
-	Takes a function f of type lambda x, t: f(x,t) and
-	generates the DG representation of the solution, an
-	array of size (nx, p).
+def map_f_to_FV(f, t, nx, dx, quad_func=_fixed_quad, n=5):
+	return integrate_f(f, t, nx, dx, quad_func=quad_func, n=n) / dx
 
-	Computes the inner product of f with p Legendre polynomials
-	over nx regions, to produce an array of size (nx, p)
-
-	Inputs
-	f: lambda x, t: f(x, t), the value of f
-	t: the current time
-
-	Outputs
-	a0: The DG representation of f(x, t) at t=t
-	"""
-	twokplusone = 2 * jnp.arange(0, p) + 1
-	return (
-		twokplusone[None, :]
-		/ dx
-		* inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=quad_func, n=n)
-	)
 
 def inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
 	"""
@@ -308,72 +289,16 @@ def integrate_f(f, t, nx, dx, quad_func=_fixed_quad, n=5):
 	integral: The inner product representation of f(x, t) at t=t
 	"""
 
+	fn = lambda x: f(x, t)
+
 	_vmap_fixed_quad = vmap(
-		lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0
+		lambda a, b: quad_func(fn, a, b, n=n), (0, 0), 0
 	)  # is n = p+1 high enough order?
 	j = jnp.arange(nx)
 	a = dx * j
 	b = dx * (j + 1)
 
-	to_int_func = lambda x: f(x, t)[:,None]
-
-	return _vmap_fixed_quad(to_int_func, a, b)[...,0]
-
-
-
-
-
-@partial(
-	jit,
-	static_argnums=(
-		1,
-		2,
-	),
-)
-def convert_DG_representation(a, p_new, nx_new, Lx):
-	"""
-	# Converts one DG representation to another. Starts by writing a function
-	# which does the mapping for a single timestep, then vmaps for many timesteps.
-
-	# Inputs
-	# a: (nx, p_old), high-resolution DG representation
-	# p_new: The order of the new representation
-	# upsampling: Spatial upsampling of new resolution
-
-	# Outputs
-	# a_new: (nx//upsampling, p_new), low-resolution DG representation
-	"""
-	nx_old, p_old = a.shape
-	if p_new == p_old and nx_new == nx_old:
-		return a
-	leg_poly_old = generate_legendre(p_old)
-	leg_poly_new = generate_legendre(p_new)
-
-	dx_new = Lx / nx_new
-	dx_old = Lx / nx_old
-
-	def convert_repr(a):
-		"""
-		Same function except a is (nx, p_old) and a_new is (nx//upsampling, p_new)
-		"""
-
-		def f_old(x, t):
-			res = evalf_1D(x, a, dx_old, leg_poly_old)
-			return res
-
-		a_pre = map_f_to_DG(
-			f_old,
-			0.0,
-			p_new,
-			nx_new,
-			dx_new,
-			leg_poly_new,
-			quad_func=_quad_two_per_interval,
-			n=8,
-		)
-		return a_pre
-
-	return convert_repr(a)
+	return _vmap_fixed_quad(a, b)
 
 
 @partial(
@@ -391,7 +316,8 @@ def convert_FV_representation(a, nx_new, Lx):
 	if nx_old >= nx_new and nx_old % nx_new == 0:
 		return jnp.mean(a.reshape(-1, nx_old // nx_new), axis=-1)
 
-	return convert_DG_representation(a[...,None], 1, nx_new, Lx)[...,0]
+	else:
+		raise Exception
 
 def f_burgers(u):
 	return u**2/2
