@@ -23,6 +23,6 @@ To generate the figure from section 6.1, type `cd 1d_advection/scripts` and edit
 
 To generate the figure from section 6.2, type `cd 1d_burgers/scripts` and edit the paths in `reproduce_hoyer_et_al.py` that say `basedir = ...` and `readwritedir = ...`. Then, type `python reproduce_hoyer_et_al.py`.
 
-To generate the figure from section 6.3, type 
+To generate the figure from section 6.3, type `cd 2d_incompressible_euler/baselines/generate_sparse_solve`, copy `eigen-3.4.0.tar` from the directory `traditional_demos/2d_euler/euler_sim_dir/code/simcode/generate_sparse_solve` here, type `tar -xvf eigen-3.4.0.tar`. On a mac, type `make compilemacLDLT` and on linux type `make compilelinuxldlt`. Then type `mv custom_call_sparse_solve* ..`. Then type `cd ../../scripts`. Edit the paths in `generate_train_eval.py` that say `basedir = ...` and `readwritedir = ...`. Then, type `python generate_train_eval.py`. 
 
 To generate the figure from section 6.4, type `cd 1d_euler/scripts` and edit the paths in in `1D_Euler_Simple_Initial_Conditions.py` that say `basedir = ...` and `readwritedir = ...`. Then, edit the boundary condition to either `periodic` or `open` (dirichlet) by editing the line `BC = ...`. Then, type `python 1D_Euler_Simple_Initial_Conditions.py`.
