@@ -770,12 +770,13 @@ for j in js:
     a_stabilized_list.append(a_stabilized[j])
     a_stabilized2_list.append(a_stabilized2[j])
 
-
+"""
 for i in range(len(a_godunov_list)):
     print("Godunov {}: {}".format(i, l2_norm(a_godunov_list[i])))
     print("Centered {}: {}".format(i, l2_norm(a_centered_list[i])))
     print("Stabilized {}: {}".format(i, l2_norm(a_stabilized_list[i])))
     print("Stabilized2 {}: {}".format(i, l2_norm(a_stabilized2_list[i])))
+"""
 
 fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8,3))
 

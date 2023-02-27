@@ -1,14 +1,6 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
-# setup paths
-import sys
 basedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/traditional_demos/1d_compressible_euler'
-readwritedir = '/Users/nickm/thesis/InvariantPreservingMLSolvers/traditional_demos/1d_compressible_euler'
 
+import sys
 sys.path.append('{}/core'.format(basedir))
 sys.path.append('{}/simulate'.format(basedir))
 sys.path.append('{}/ml'.format(basedir))
@@ -46,7 +38,7 @@ def get_core_params(Lx = 1.0, gamma = 5/3, bc = 'periodic', fluxstr = 'laxfriedr
 
 
 def get_sim_params(name = "test", cfl_safety=0.3, rk='ssp_rk3'):
-    return SimulationParams(name, basedir, readwritedir, cfl_safety, rk)
+    return SimulationParams(name, basedir, None, cfl_safety, rk)
 
 
 def plot_a(a, core_params, mins = [0.0 - 2e-2] * 3, maxs= [1.0 + 5e-2] * 3):
@@ -235,52 +227,4 @@ fig1.savefig("compressible_euler_v_demo.eps")
 fig1.savefig("compressible_euler_v_demo.png")
 fig2.savefig("compressible_euler_p_demo.eps")
 fig2.savefig("compressible_euler_p_demo.png")
-
-
-# In[ ]:
-
-
-from timederivative import _time_derivative_euler_open
-from helper import get_entropy_flux, get_w
-from initialconditions import get_u_left, get_u_right
-import jax.numpy as jnp
-
-
-def time_derivative_FV_1D_euler(core_params, dt_fn = None, deta_dt_ratio = None, G = None):
-    flux_term = _time_derivative_euler_open(core_params, dt_fn = dt_fn)
-    def dadt(a):
-        nx = a.shape[1]
-        dx = core_params.Lx / nx
-        F = flux_term(a)# (3, nx + 1)
-        if G is not None:
-            assert deta_dt_ratio is not None
-            G_R = G(a, core_params) # (3, nx-1)
-            w = get_w(a, core_params) # (3, nx)
-            diff_w = (w[:,1:] - w[:,:-1])
-            deta_dt_old = jnp.sum(F[:,1:-1] * diff_w) - jnp.sum(F[:, -1] * w[:, -1]) + jnp.sum(F[:, 0] * w[:, 0])
-            deta_dt_bc = get_entropy_flux(get_u_left(core_params), core_params) - get_entropy_flux(get_u_right(core_params), core_params)
-            deta_dt_new =  deta_dt_bc + deta_dt_ratio * (deta_dt_old - deta_dt_bc)
-            
-            print(deta_dt_old)
-            print(deta_dt_bc)
-            print(deta_dt_new)
-            denom = jnp.sum(G_R * diff_w)
-            F = F.at[:,1:-1].add((deta_dt_new - deta_dt_old) * G_R / denom)
-        F_R = F[:, 1:]
-        F_L = F[:, :-1]
-        return (F_L - F_R) / dx
-
-    return dadt
-
-core_params = get_core_params(**kwargs_core_params)
-
-dadt = time_derivative_FV_1D_euler(core_params, None, deta_dt_ratio = 2.0, G=G_primitive)
-
-res = dadt(trajectory_zero[3])
-
-
-# In[ ]:
-
-
-
-
+plt.show()

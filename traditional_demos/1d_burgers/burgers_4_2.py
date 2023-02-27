@@ -451,6 +451,7 @@ a_finite_difference, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, out
 a_stabilized, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, output="True", conservative = True, dl_dt = None) #np.zeros(dl_dt_upsample.shape))
 a_stabilized2, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, output="True", conservative = True, dl_dt = dl_dt_upsample)
 
+"""
 print(a_godunov.shape)
 print(a_finite_difference.shape)
 
@@ -463,7 +464,7 @@ print("L2 norm of a_godunov is {}".format(0.5 * np.sum(a_godunov**2, axis=(1,2))
 print("L2 norm of a_non_conservative is {}".format(0.5 * np.sum(a_finite_difference**2, axis=(1,2)) * dx))
 print("L2 norm of a_stabilized is {}".format(0.5 * np.sum(a_stabilized**2, axis=(1,2)) * dx))
 print("L2 norm of a_stabilized_dldt is {}".format(0.5 * np.sum(a_stabilized2**2, axis=(1,2)) * dx))
-
+"""
 
 num = a_finite_difference.shape[0]
 js = [0, int(0.33 * num), int(0.66 * num), num-1]
