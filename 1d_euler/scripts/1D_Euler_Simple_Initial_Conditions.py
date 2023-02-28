@@ -323,7 +323,6 @@ with open('mses_simple_{}.npy'.format(BC), 'wb') as f:
 # In[ ]:
 
 
-BC = 'periodic'
 mses = onp.load('mses_simple_{}.npy'.format(BC))
 mses = onp.nan_to_num(mses, nan=1e5)
 print(mses)
