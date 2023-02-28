@@ -246,8 +246,8 @@ outer_steps = 11
 
 convert_trajectory_fn = vmap(convert_FV_representation, (0, None, None))
 
-def RMSE_trajectory(traj, traj_ex):
-    return jnp.sqrt(jnp.mean((traj - traj_ex)**2))
+def MSE_trajectory(traj, traj_ex):
+    return jnp.mean((traj - traj_ex)**2)
 
 # trajectory setup
 
@@ -300,9 +300,9 @@ for n in range(N_test):
         # Invariant-preserving ML trajectory
         trajectory_invariant_ML = get_trajectory_ML(a0, aL, aR, params, invariant_preserving=True, cfl_safety = 0.05)
         
-        error_muscl = RMSE_trajectory(trajectory_muscl, trajectory_exact_ds)
-        error_ml = RMSE_trajectory(trajectory_ML, trajectory_exact_ds)
-        error_ml_gs = RMSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
+        error_muscl = MSE_trajectory(trajectory_muscl, trajectory_exact_ds)
+        error_ml = MSE_trajectory(trajectory_ML, trajectory_exact_ds)
+        error_ml_gs = MSE_trajectory(trajectory_invariant_ML, trajectory_exact_ds)
         if not onp.isnan(error_ml) and error_ml < 1.0:
             errors[i, 0] += error_muscl
             errors[i, 1] += error_ml
