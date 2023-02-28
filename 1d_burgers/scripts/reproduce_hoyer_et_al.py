@@ -325,7 +325,7 @@ for n in range(N):
 
     #warmup
     trajectory_warmup, trajectory_t = trajectory_fn_warmup(x0_init)
-    a0_exact = trajectory_exact[-1]
+    a0_exact = trajectory_warmup[-1]
     t0 = trajectory_t[-1]
     x0_exact = (a0_exact, t0)
     
