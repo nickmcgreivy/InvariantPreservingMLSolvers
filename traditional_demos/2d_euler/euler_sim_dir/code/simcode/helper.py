@@ -188,7 +188,9 @@ def _eval_legendre(order):
     return f
 
 
-def inner_prod_with_legendre(nx, ny, Lx, Ly, order, func, t, quad_func=_2d_fixed_quad, n=5):
+def inner_prod_with_legendre(
+    nx, ny, Lx, Ly, order, func, t, quad_func=_2d_fixed_quad, n=5
+):
     dx = Lx / nx
     dy = Ly / ny
 
@@ -217,14 +219,15 @@ def inner_prod_with_legendre(nx, ny, Lx, Ly, order, func, t, quad_func=_2d_fixed
     to_int_func = lambda x, y: func(x, y, t) * _eval_legendre(order)(xi_x(x), xi_y(y))
     return _vmap_integrate(to_int_func, x_i, x_f, y_i, y_f)
 
+
 def f_to_FV(nx, ny, Lx, Ly, order, func, t, quad_func=_2d_fixed_quad, n=5):
     inner_prod = legendre_inner_product(order)
     dx = Lx / nx
     dy = Ly / ny
 
-    return inner_prod_with_legendre(nx, ny, Lx, Ly, order, func, t, quad_func=quad_func, n=n) / (
-        inner_prod[None, None, :] * dx * dy
-    )
+    return inner_prod_with_legendre(
+        nx, ny, Lx, Ly, order, func, t, quad_func=quad_func, n=n
+    ) / (inner_prod[None, None, :] * dx * dy)
 
 
 def f_to_source(nx, ny, Lx, Ly, order, func, t, quad_func=_2d_fixed_quad, n=5):
@@ -273,9 +276,7 @@ def nabla(f):
         7,
     ),
 )
-def convert_representation(
-    a, order_new, order_high, nx_new, ny_new, Lx, Ly, n = 8
-):
+def convert_representation(a, order_new, order_high, nx_new, ny_new, Lx, Ly, n=8):
     _, nx_high, ny_high = a.shape[0:3]
     dx_high = Lx / nx_high
     dy_high = Ly / ny_high

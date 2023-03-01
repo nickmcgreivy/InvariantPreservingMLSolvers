@@ -14,6 +14,7 @@ class Flux(Enum):
     def __str__(self):
         return self.value
 
+
 def minmod(r):
     return np.maximum(0, np.minimum(1, r))
 

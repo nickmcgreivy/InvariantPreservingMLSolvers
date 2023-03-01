@@ -311,7 +311,7 @@ def create_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, num_global_elements)
             sK[M[i, j, :][:, None], M[i, j, :][None, :]] += K_elementwise[:, :]
     return sK
 
-    
+
 def get_kernel(order):
     bottom_indices = get_bottom_indices(order)
     K = np.zeros((2, 2, num_elements_FE(order), num_elements_FE(order)))
@@ -329,6 +329,7 @@ def get_kernel(order):
 # Poisson solver
 ######
 
+
 def get_poisson_solve_fn_fv(sim_params):
     basedir = sim_params.basedir
     nx = sim_params.nx
@@ -341,27 +342,31 @@ def get_poisson_solve_fn_fv(sim_params):
     S_elem = load_elementwise_source(basedir, nx, ny, Lx, Ly, order)
     K = get_kernel(order) @ S_elem
 
-
     sV = load_volume_matrix(basedir, nx, ny, Lx, Ly, order, M, N_global_elements)
     V_sp = jsparse.BCOO.from_scipy_sparse(sV)
     args = V_sp.data, V_sp.indices, N_global_elements
     kwargs = {"forward": True}
-    #tol = 1e-8
-    #V = sparse.csr_matrix.todense(sV)[1:, 1:]
-    #data, indices, indptr = jsparse.csr_fromdense(V, nse=np.count_nonzero(V))
-    #jax_lu_solve = lambda b: jsparse.sparsify(spsolve)(data, indices, indptr, b, tol=tol)
+    # tol = 1e-8
+    # V = sparse.csr_matrix.todense(sV)[1:, 1:]
+    # data, indices, indptr = jsparse.csr_fromdense(V, nse=np.count_nonzero(V))
+    # jax_lu_solve = lambda b: jsparse.sparsify(spsolve)(data, indices, indptr, b, tol=tol)
 
     platform = xla_bridge.get_backend().platform
 
-    if platform == 'cpu':
-        custom_lu_solve = jax.jit(lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs))
+    if platform == "cpu":
+        custom_lu_solve = jax.jit(
+            lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs)
+        )
 
         def solve_step(b):
             res = custom_lu_solve(b)
             return res - jnp.mean(res)
 
-    elif platform == 'gpu':
-        custom_lu_solve = jax.jit(lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs), backend='cpu')
+    elif platform == "gpu":
+        custom_lu_solve = jax.jit(
+            lambda b: sparsesolve.sparse_solve_prim(b, *args, **kwargs), backend="cpu"
+        )
+
         def solve_step(b):
             res = jax.pure_callback(custom_lu_solve, b, b)
             return res - jnp.mean(res)
@@ -373,7 +378,7 @@ def get_poisson_solve_fn_fv(sim_params):
         xi = xi - jnp.mean(xi)
         xi = jnp.pad(xi, ((1, 0), (1, 0)), mode="wrap")
         F_ijb = jax.lax.conv_general_dilated(
-            xi[None, :,:, None],
+            xi[None, :, :, None],
             K,
             (1, 1),
             padding="VALID",

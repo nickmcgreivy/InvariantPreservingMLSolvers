@@ -1,4 +1,3 @@
-from model import LearnedFlux2D
 from flax.training import train_state  # Useful dataclass to keep train state
 import optax
 import jax
@@ -8,20 +7,21 @@ import numpy as onp
 from optax import polynomial_schedule
 import h5py
 from flax import serialization
+
 from helper import convert_FV_representation
 from trajectory import get_trajectory_fn, get_inner_fn
 from initialconditions import init_fn_jax_cfd
 from lossfunctions import MSE_loss
 from model import output_flux
+from model import LearnedFlux2D
 
 
 def init_params(key, model):
     NX_NO_MEANING = 128  # params doesn't depend on this
     NY_NO_MEANING = 128
     zeros = jnp.zeros((NX_NO_MEANING, NY_NO_MEANING))
-    return model.init(
-        key, zeros, zeros, zeros
-    )
+    return model.init(key, zeros, zeros, zeros)
+
 
 def create_train_state(model, params, optimizer="adam"):
     if optimizer == "adam":
@@ -32,12 +32,15 @@ def create_train_state(model, params, optimizer="adam"):
         raise ValueError("Incorrect Optimizer")
     return train_state.TrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
+
 def create_training_data(sim_params_ds, N):
     for sim_params in sim_params_ds:
         nx = sim_params.nx
         ny = sim_params.ny
         f = h5py.File(
-            "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx, ny),
+            "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(
+                sim_params.readwritedir, sim_params.name, nx, ny
+            ),
             "w",
         )
         f.create_dataset("vorticity", (N, nx, ny), dtype="float64")
@@ -46,25 +49,47 @@ def create_training_data(sim_params_ds, N):
         f.create_dataset("alpha_T", (N, nx, ny), dtype="float64")
         f.close()
 
-def write_trajectory(sim_params, vorticity, dadt_diff, alpha_R, alpha_T, n, outer_steps):
+
+def write_trajectory(
+    sim_params, vorticity, dadt_diff, alpha_R, alpha_T, n, outer_steps
+):
     nx = sim_params.nx
     ny = sim_params.ny
     f = h5py.File(
-        "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx, ny),
+        "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        ),
         "r+",
     )
     j_begin = n * outer_steps
-    j_end = (n+1) * outer_steps
+    j_end = (n + 1) * outer_steps
     f["vorticity"][j_begin:j_end] = vorticity
     f["dadt_diff"][j_begin:j_end] = dadt_diff
     f["alpha_R"][j_begin:j_end] = alpha_R
     f["alpha_T"][j_begin:j_end] = alpha_T
     f.close()
 
-def save_training_data(key, sim_params_exact, simulation_exact, t_burn_in, t_inner, outer_steps, n_runs, sim_params_ds, simulation_ds, max_velocity=7.0, ic_wavenumber=2):
+
+def save_training_data(
+    key,
+    sim_params_exact,
+    simulation_exact,
+    t_burn_in,
+    t_inner,
+    outer_steps,
+    n_runs,
+    sim_params_ds,
+    simulation_ds,
+    max_velocity=7.0,
+    ic_wavenumber=2,
+):
     inner_fn = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_inner)
-    inner_fn_burnin = get_inner_fn(simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in)
-    rollout_burnin_fn = jax.jit(get_trajectory_fn(inner_fn_burnin, 1, start_with_input = False))
+    inner_fn_burnin = get_inner_fn(
+        simulation_exact.step_fn, simulation_exact.dt_fn, t_burn_in
+    )
+    rollout_burnin_fn = jax.jit(
+        get_trajectory_fn(inner_fn_burnin, 1, start_with_input=False)
+    )
     rollout_fn = jax.jit(get_trajectory_fn(inner_fn, outer_steps))
     time_derivative_fn = jax.vmap(jax.jit(simulation_exact.F))
 
@@ -79,25 +104,45 @@ def save_training_data(key, sim_params_exact, simulation_exact, t_burn_in, t_inn
         dadt_trajectory = time_derivative_fn(vorticity_trajectory)
 
         for j, sim_params in enumerate(sim_params_ds):
-            convert_fn = jax.jit(jax.vmap(lambda v: convert_FV_representation(v, sim_params)))
+            convert_fn = jax.jit(
+                jax.vmap(lambda v: convert_FV_representation(v, sim_params))
+            )
             time_derivative_fn_ds = jax.vmap(jax.jit(simulation_ds[j].F))
             alpha_fn_ds = jax.vmap(jax.jit(simulation_ds[j].alpha_fn))
             vorticity_trajectory_ds = convert_fn(vorticity_trajectory)
             dadt_trajectory_exact_ds = convert_fn(dadt_trajectory)
             dadt_trajectory_ds = time_derivative_fn_ds(vorticity_trajectory_ds)
             dadt_diff = dadt_trajectory_exact_ds - dadt_trajectory_ds
-            alpha_R_trajectory_ds, alpha_T_trajectory_ds = alpha_fn_ds(vorticity_trajectory_ds)
-            write_trajectory(sim_params, vorticity_trajectory_ds, dadt_diff, alpha_R_trajectory_ds, alpha_T_trajectory_ds, n, outer_steps)
+            alpha_R_trajectory_ds, alpha_T_trajectory_ds = alpha_fn_ds(
+                vorticity_trajectory_ds
+            )
+            write_trajectory(
+                sim_params,
+                vorticity_trajectory_ds,
+                dadt_diff,
+                alpha_R_trajectory_ds,
+                alpha_T_trajectory_ds,
+                n,
+                outer_steps,
+            )
 
 
 def save_training_params(sim_params, params, losses):
     nx = sim_params.nx
     ny = sim_params.ny
     bytes_output = serialization.to_bytes(params)
-    with open("{}/data/params/{}_nx{}_ny{}_params".format(sim_params.readwritedir, sim_params.name, nx, ny), "wb") as f:
+    with open(
+        "{}/data/params/{}_nx{}_ny{}_params".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        ),
+        "wb",
+    ) as f:
         f.write(bytes_output)
     with open(
-        "{}/data/params/{}_nx{}_ny{}_losses.npy".format(sim_params.readwritedir, sim_params.name, nx, ny), "wb"
+        "{}/data/params/{}_nx{}_ny{}_losses.npy".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        ),
+        "wb",
     ) as f:
         onp.save(f, losses)
 
@@ -105,9 +150,16 @@ def save_training_params(sim_params, params, losses):
 def load_training_params(sim_params, model):
     nx = sim_params.nx
     ny = sim_params.ny
-    losses = onp.load("{}/data/params/{}_nx{}_ny{}_losses.npy".format(sim_params.readwritedir, sim_params.name, nx, ny))
+    losses = onp.load(
+        "{}/data/params/{}_nx{}_ny{}_losses.npy".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        )
+    )
     with open(
-        "{}/data/params/{}_nx{}_ny{}_params".format(sim_params.readwritedir, sim_params.name, nx, ny), "rb"
+        "{}/data/params/{}_nx{}_ny{}_params".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        ),
+        "rb",
     ) as f:
         param_bytes = f.read()
 
@@ -126,11 +178,14 @@ def get_idx_gen(key, ml_params, n_data):
         yield jnp.sort(shuffle_idxs[counter : counter + ml_params.batch_size])
         counter += ml_params.batch_size
 
+
 def get_batch_fn(sim_params, n_data):
     nx = sim_params.nx
     ny = sim_params.ny
     f = h5py.File(
-        "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(sim_params.readwritedir, sim_params.name, nx, ny),
+        "{}/data/traindata/{}_nx{}_ny{}.hdf5".format(
+            sim_params.readwritedir, sim_params.name, nx, ny
+        ),
         "r",
     )
     vorticity = device_put(jnp.asarray(f["vorticity"][:n_data]), jax.devices()[0])
@@ -141,17 +196,21 @@ def get_batch_fn(sim_params, n_data):
 
     @jax.jit
     def batch_fn(idxs):
-        return {"vorticity": vorticity[idxs], "alpha_R": alpha_R[idxs], "alpha_T": alpha_T[idxs], "dadt_diff": dadt_diff[idxs]}
+        return {
+            "vorticity": vorticity[idxs],
+            "alpha_R": alpha_R[idxs],
+            "alpha_T": alpha_T[idxs],
+            "dadt_diff": dadt_diff[idxs],
+        }
 
     return batch_fn
 
 
 def get_loss_fn(model, sim_params):
-
     denominator = sim_params.dx * sim_params.dy
 
     def delta_dadt_fn(zeta, alpha_R, alpha_T, params):
-        #flux_R, flux_T = stencil_flux(zeta, alpha_R, alpha_T, model, params)
+        # flux_R, flux_T = stencil_flux(zeta, alpha_R, alpha_T, model, params)
         flux_R, flux_T = output_flux(zeta, alpha_R, alpha_T, model, params)
         flux_L = jnp.roll(flux_R, 1, axis=0)
         flux_B = jnp.roll(flux_T, 1, axis=1)
@@ -160,13 +219,14 @@ def get_loss_fn(model, sim_params):
 
     batch_delta_dadt_fn = jax.vmap(delta_dadt_fn, in_axes=(0, 0, 0, None), out_axes=0)
 
-
     if model is not None:
 
         @jax.jit
         def loss_fn(params, batch):
             dadt_diff = batch["dadt_diff"]
-            delta_dadt = batch_delta_dadt_fn(batch["vorticity"], batch["alpha_R"], batch["alpha_T"], params)
+            delta_dadt = batch_delta_dadt_fn(
+                batch["vorticity"], batch["alpha_R"], batch["alpha_T"], params
+            )
             return MSE_loss(dadt_diff, delta_dadt)
 
     else:
@@ -175,7 +235,6 @@ def get_loss_fn(model, sim_params):
         def loss_fn(params, batch):
             dadt_diff = batch["dadt_diff"]
             return MSE_loss(dadt_diff, jnp.zeros(dadt_diff.shape))
-
 
     return loss_fn
 
@@ -226,7 +285,6 @@ def train_model(model, params, key, idx_fn, batch_fn, loss_fn):
             losses.append(loss)
         return state, losses
 
-    
     n_loss_per_batch = 0
     for idxs in idx_fn(jax.random.PRNGKey(0)):
         n_loss_per_batch += 1
@@ -237,6 +295,8 @@ def train_model(model, params, key, idx_fn, batch_fn, loss_fn):
         print(n)
         key, _ = jax.random.split(key)
         state, losses = batch_step(state, key)
-        losses_all[n * n_loss_per_batch : (n+1) * n_loss_per_batch] = onp.asarray(losses)
+        losses_all[n * n_loss_per_batch : (n + 1) * n_loss_per_batch] = onp.asarray(
+            losses
+        )
 
     return jnp.asarray(losses_all), state.params

@@ -337,8 +337,6 @@ def load_change_legendre_points_twice(basedir, order):
     return LP
 
 
-
-
 def get_poisson_bracket(basedir, order, flux):
     V = load_poisson_volume(basedir, order)
     R = load_alpha_right_matrix_twice(basedir, order)
@@ -401,10 +399,9 @@ def get_poisson_bracket(basedir, order, flux):
         s_R_minus = minmod_3(2 * s_R_left, s_R_centered, 2 * s_R_right)
         s_R_plus = np.roll(s_R_minus, -1, axis=0)
 
-        F_R = (alpha_R_points > 0) * alpha_R_points * (zeta_R_points_minus + s_R_minus / 2) + (
-            alpha_R_points <= 0
-        ) * alpha_R_points * (zeta_R_points_plus - s_R_plus / 2)
-
+        F_R = (alpha_R_points > 0) * alpha_R_points * (
+            zeta_R_points_minus + s_R_minus / 2
+        ) + (alpha_R_points <= 0) * alpha_R_points * (zeta_R_points_plus - s_R_plus / 2)
 
         alpha_T_points = H @ T.T
         zeta_T_points_minus = zeta
@@ -416,13 +413,11 @@ def get_poisson_bracket(basedir, order, flux):
         s_T_minus = minmod_3(2 * s_T_left, s_T_centered, 2 * s_T_right)
         s_T_plus = np.roll(s_T_minus, -1, axis=1)
 
-        F_T = (alpha_T_points > 0) * alpha_T_points * (zeta_T_points_minus + s_T_minus / 2) + (
-            alpha_T_points <= 0
-        ) * alpha_T_points * (zeta_T_points_plus - s_T_plus / 2)
-
+        F_T = (alpha_T_points > 0) * alpha_T_points * (
+            zeta_T_points_minus + s_T_minus / 2
+        ) + (alpha_T_points <= 0) * alpha_T_points * (zeta_T_points_plus - s_T_plus / 2)
 
         return F_R, F_T
-
 
     def poisson_bracket(zeta, H):
         return vanleer(zeta, H)

@@ -1,12 +1,13 @@
 import jax.numpy as np
 from functools import partial
 import numpy as onp
+from jax import vmap, hessian, jit
+
 from basisfunctions import (
     legendre_npbasis,
     node_locations,
     legendre_inner_product,
 )
-from jax import vmap, hessian, jit
 
 
 def _trapezoidal_integration(f, xi, xf, yi, yf, n=None):
@@ -215,7 +216,6 @@ def _eval_legendre(order):
 
 
 def inner_prod_with_legendre(sim_params, func, quad_func=_2d_fixed_quad, n=5):
-
     i = np.arange(sim_params.nx)
     x_i = sim_params.dx * i
     x_f = sim_params.dx * (i + 1)
@@ -238,19 +238,19 @@ def inner_prod_with_legendre(sim_params, func, quad_func=_2d_fixed_quad, n=5):
     _vmap_integrate = vmap(
         vmap(quad_lambda, (None, 0, 0, None, None), 0), (None, None, None, 0, 0), 1
     )
-    to_int_func = lambda x, y: func(x, y) * _eval_legendre(sim_params.order)(xi_x(x), xi_y(y))
+    to_int_func = lambda x, y: func(x, y) * _eval_legendre(sim_params.order)(
+        xi_x(x), xi_y(y)
+    )
     return _vmap_integrate(to_int_func, x_i, x_f, y_i, y_f)
 
 
 def integrate_fn_fv(sim_params, func, quad_func=_2d_fixed_quad, n=5):
-
     i = np.arange(sim_params.nx)
     x_i = sim_params.dx * i
     x_f = sim_params.dx * (i + 1)
     j = np.arange(sim_params.ny)
     y_i = sim_params.dy * j
     y_f = sim_params.dy * (j + 1)
-
 
     denom = sim_params.dx * sim_params.dy
     quad_lambda = lambda f, xi, xf, yi, yf: quad_func(f, xi, xf, yi, yf, n=n)
@@ -292,9 +292,7 @@ def f_to_FE(nx, ny, Lx, Ly, order, func, t):
     return _vmap_evaluate(x_eval, y_eval, t)
 
 
-def convert_DG_representation(
-    zeta, old_order, sim_params, n = 8
-):
+def convert_DG_representation(zeta, old_order, sim_params, n=8):
     nx_high, ny_high, _ = zeta.shape
     dx_high = sim_params.Lx / nx_high
     dy_high = sim_params.Ly / ny_high
@@ -309,7 +307,7 @@ def convert_DG_representation(
 
 
 def convert_FV_to_DG_representation(zeta, sim_params, n=8):
-    return convert_DG_representation(zeta[:,:,None], 0, sim_params, n=n)
+    return convert_DG_representation(zeta[:, :, None], 0, sim_params, n=n)
 
 
 def convert_FV_representation(zeta, sim_params, n=8):
@@ -318,21 +316,25 @@ def convert_FV_representation(zeta, sim_params, n=8):
     dy_high = sim_params.Ly / ny_high
 
     nx_new = sim_params.nx
-    ny_new = sim_params.ny 
-    
+    ny_new = sim_params.ny
+
     if nx_high % nx_new == 0 and ny_high % ny_new == 0:
-        return np.mean(zeta.reshape(nx_new, nx_high // nx_new, ny_new, ny_high // ny_new) , axis=(1, 3))   
+        return np.mean(
+            zeta.reshape(nx_new, nx_high // nx_new, ny_new, ny_high // ny_new),
+            axis=(1, 3),
+        )
 
     def convert_repr(zeta):
         def f_high(x, y):
-            return _evalf_2D_integrate(x, y, zeta[:,:, None], dx_high, dy_high, 0)
+            return _evalf_2D_integrate(x, y, zeta[:, :, None], dx_high, dy_high, 0)
 
         return integrate_fn_fv(sim_params, f_high, n=n)
 
     return convert_repr(zeta)
 
+
 def batch_convert_DG_representation(*args):
-    return vmap(convert_DG_representation, in_axes=(0,None,None))(*args)
+    return vmap(convert_DG_representation, in_axes=(0, None, None))(*args)
 
 
 def vorticity_to_velocity(Lx, Ly, a, f_poisson):
@@ -341,8 +343,8 @@ def vorticity_to_velocity(Lx, Ly, a, f_poisson):
     dx = Lx / nx
     dy = Ly / ny
 
-    u_y = -(H[:,:,2] - H[:,:,3]) / dx
-    u_x = (H[:,:,2] - H[:,:,1]) / dy
+    u_y = -(H[:, :, 2] - H[:, :, 3]) / dx
+    u_x = (H[:, :, 2] - H[:, :, 1]) / dy
     return u_x, u_y
 
 

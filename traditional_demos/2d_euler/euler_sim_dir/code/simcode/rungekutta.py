@@ -18,7 +18,7 @@ def ssp_rk3(a_n, t_n, F, dt, dldt=None):
     a_3 = 1 / 3 * a_n + 2 / 3 * (a_2 + dt * F(a_2, dt + dt / 2, dldt=dldt))
     return a_3, t_n + dt
 
-    
+
 FUNCTION_MAP = {
     "FE": forward_euler,
     "fe": forward_euler,

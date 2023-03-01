@@ -12,7 +12,7 @@ def ssp_rk3(a_n, t_n, F, dt):
     a_1 = a_n + dt * F(a_n, t_n)
     t_1 = t_n + dt
     a_2 = 0.75 * a_n + 0.25 * (a_1 + dt * F(a_1, t_1))
-    t_2 = t_n + dt/2
+    t_2 = t_n + dt / 2
     return 1 / 3 * a_n + 2 / 3 * (a_2 + dt * F(a_2, t_2)), t_n + dt
 
 

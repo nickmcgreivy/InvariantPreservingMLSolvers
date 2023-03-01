@@ -11,6 +11,7 @@ from helper import f_to_FE
 
 PI = np.pi
 
+
 def get_initial_condition(key, args):
     def zeros(x, y, t):
         assert x.shape == y.shape
@@ -19,7 +20,7 @@ def get_initial_condition(key, args):
     def gaussian(x, y, t):
         xc, yc = args.Lx / 2, args.Ly / 2
         return np.exp(
-            -75 * ((x - xc) ** 2 / args.Lx ** 2 + (y - yc) ** 2 / args.Ly ** 2)
+            -75 * ((x - xc) ** 2 / args.Lx**2 + (y - yc) ** 2 / args.Ly**2)
         )
 
     def diffusion_test(x, y, t):
@@ -36,7 +37,7 @@ def get_initial_condition(key, args):
     def cosine_hump(x, y, t):
         x0 = 0.25 * args.Lx
         y0 = 0.5 * args.Ly
-        r0 = 0.2 * np.sqrt((args.Lx ** 2 + args.Ly ** 2) / 2)
+        r0 = 0.2 * np.sqrt((args.Lx**2 + args.Ly**2) / 2)
         r = np.minimum(np.sqrt((x - x0) ** 2 + (y - y0) ** 2), r0) / r0
         return 0.25 * (1 + np.cos(np.pi * r))
 
@@ -44,7 +45,7 @@ def get_initial_condition(key, args):
         x0a = 0.25 * args.Lx
         x0b = 0.75 * args.Lx
         y0 = 0.5 * args.Ly
-        r0 = 0.2 * np.sqrt((args.Lx ** 2 + args.Ly ** 2) / 2)
+        r0 = 0.2 * np.sqrt((args.Lx**2 + args.Ly**2) / 2)
         ra = np.minimum(np.sqrt((x - x0a) ** 2 + (y - y0) ** 2), r0) / r0
         rb = np.minimum(np.sqrt((x - x0b) ** 2 + (y - y0) ** 2), r0) / r0
         return 0.25 * (1 + np.cos(np.pi * ra)) + 0.25 * (1 + np.cos(np.pi * rb))
@@ -64,21 +65,17 @@ def get_initial_condition(key, args):
         y1 = 0.5 * args.Ly
         x2 = 0.65 * args.Lx
         y2 = 0.5 * args.Ly
-        denom_x = 0.8 * (args.Lx ** 2) / (100.0)
-        denom_y = 0.8 * (args.Ly ** 2 / 100)
+        denom_x = 0.8 * (args.Lx**2) / (100.0)
+        denom_y = 0.8 * (args.Ly**2 / 100)
         gaussian_1 = np.exp(-((x - x1) ** 2 / denom_x + (y - y1) ** 2 / denom_y))
         gaussian_2 = np.exp(-((x - x2) ** 2 / denom_x + (y - y2) ** 2 / denom_y))
         return gaussian_1 + gaussian_2
 
-
     def sum_modes(x, y, amplitudes, ks_x, ks_y, phases_x, phases_y):
         return np.sum(
             amplitudes[None, :]
-            * np.sin(
-                ks_x[None, :] * 2 * PI / args.Lx * x[:, None] + phases_x[None, :]
-            ) * np.sin(
-                ks_y[None, :] * 2 * PI / args.Ly * y[:, None] + phases_y[None, :]
-            ),
+            * np.sin(ks_x[None, :] * 2 * PI / args.Lx * x[:, None] + phases_x[None, :])
+            * np.sin(ks_y[None, :] * 2 * PI / args.Ly * y[:, None] + phases_y[None, :]),
             axis=1,
         )
 
@@ -101,15 +98,13 @@ def get_initial_condition(key, args):
         key1, key2, key3, key4, key5 = random.split(key, 5)
         phases_x = random.uniform(key1, (args.num_init_modes,)) * 2 * PI
         phases_y = random.uniform(key2, (args.num_init_modes,)) * 2 * PI
-        ks_x = random.randint(
-            key3, (args.num_init_modes,), args.min_k, args.max_k
-        )
-        ks_y = random.randint(
-            key4, (args.num_init_modes,), args.min_k, args.max_k
-        )
+        ks_x = random.randint(key3, (args.num_init_modes,), args.min_k, args.max_k)
+        ks_y = random.randint(key4, (args.num_init_modes,), args.min_k, args.max_k)
         amplitudes = random.uniform(key5, (args.num_init_modes,)) * args.amplitude_max
-        return lambda x, y, t: sum_modes(x, y, amplitudes, ks_x, ks_y, phases_x, phases_y)
-    elif args.initial_condition == 'diffusion_test':
+        return lambda x, y, t: sum_modes(
+            x, y, amplitudes, ks_x, ks_y, phases_x, phases_y
+        )
+    elif args.initial_condition == "diffusion_test":
         return diffusion_test
     else:
         raise NotImplementedError
@@ -139,7 +134,7 @@ def get_f_phi(key, args, nx, ny, order):
         return y - x
 
     def circular_func(x, y, t):
-        return -1 / 2 * (y ** 2 - y + x ** 2 - x)
+        return -1 / 2 * (y**2 - y + x**2 - x)
 
     def swirl_func(x, y, t):
         T = 1.0

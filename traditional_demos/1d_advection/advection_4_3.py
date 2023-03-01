@@ -3,21 +3,27 @@ from jax import vmap, jit
 from jax.lax import scan
 import matplotlib.pyplot as plt
 from jax.config import config
+
 config.update("jax_enable_x64", True)
 
 vmap_polyval = vmap(np.polyval, (0, None), -1)
 
 import matplotlib as mpl
+
 mpl.rcParams.update(mpl.rcParamsDefault)
 
 
-def forward_euler(a_n, t_n, F, dt, delta_l2 = None):
+def forward_euler(a_n, t_n, F, dt, delta_l2=None):
     update = dt * F(a_n, t_n)
     if delta_l2 is not None:
         update = update - np.mean(update)
         G = np.roll(a_n, -1, axis=0) + np.roll(a_n, 1, axis=0) - 2 * a_n
         coeff = np.sum((a_n + update) * G) / np.sum(G**2)
-        sqrt_arg = (np.sum(G**2)) * (2 * np.sum(a_n * update) + np.sum(update**2) - delta_l2) / ((np.sum((a_n + update) * G))**2)
+        sqrt_arg = (
+            (np.sum(G**2))
+            * (2 * np.sum(a_n * update) + np.sum(update**2) - delta_l2)
+            / ((np.sum((a_n + update) * G)) ** 2)
+        )
         epsilon = coeff * (-1 + np.sqrt(1 - sqrt_arg))
         update = update + epsilon * G
     a_1 = a_n + update
@@ -168,10 +174,7 @@ def _fixed_quad(f, a, b, n=5):
 
 
 def inner_prod_with_legendre(f, t, nx, dx, quad_func=_fixed_quad, n=5):
-    
-    _vmap_fixed_quad = vmap(
-        lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0
-    ) 
+    _vmap_fixed_quad = vmap(lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0)
     j = np.arange(nx)
     a = dx * j
     b = dx * (j + 1)
@@ -181,26 +184,20 @@ def inner_prod_with_legendre(f, t, nx, dx, quad_func=_fixed_quad, n=5):
         x_j = dx * (0.5 + j)
         return (x - x_j) / (0.5 * dx)
 
-    to_int_func = lambda x: f(x, t)[:, None] * vmap_polyval(np.asarray([[1.]]), xi(x))
+    to_int_func = lambda x: f(x, t)[:, None] * vmap_polyval(np.asarray([[1.0]]), xi(x))
 
     return _vmap_fixed_quad(to_int_func, a, b)
 
 
-
-
-
 def map_f_to_FV(f, t, nx, dx, quad_func=_fixed_quad, n=5):
-    return (
-        inner_prod_with_legendre(f, t, nx, dx, quad_func=quad_func, n=n) / dx
-    )
-
+    return inner_prod_with_legendre(f, t, nx, dx, quad_func=quad_func, n=n) / dx
 
 
 def evalf_1D(x, a, dx, leg_poly):
     j = np.floor(x / dx).astype(int)
     x_j = dx * (0.5 + j)
     xi = (x - x_j) / (0.5 * dx)
-    poly_eval = vmap_polyval(np.asarray([[1.]]), xi)  # nx, p array
+    poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)  # nx, p array
     return np.sum(poly_eval * a[j, :], axis=-1)
 
 
@@ -216,22 +213,20 @@ def _scan_output(sol, x, rk_F):
     return (a_f, t_f), (a, t)
 
 
-
 def _muscl_flux_1D_advection(a):
     raise NotImplementedError
+
 
 def _centered_flux_1D_advection(a):
     u = np.sum(a, axis=-1)
     return (u + np.roll(u, -1)) / 2
 
+
 def _upwind_flux_1D_advection(a):
     return np.sum(a, axis=-1)
 
 
-
-def time_derivative_1D_advection(
-    a, t, nx, dx, flux
-):
+def time_derivative_1D_advection(a, t, nx, dx, flux):
     if flux == "centered":
         flux_right = _centered_flux_1D_advection(a)
     elif flux == "upwind":
@@ -241,7 +236,7 @@ def time_derivative_1D_advection(
 
     flux_left = np.roll(flux_right, 1, axis=0)
     return (flux_left[:, None] - flux_right[:, None]) / dx
-    
+
 
 def simulate_1D(
     a0,
@@ -252,10 +247,9 @@ def simulate_1D(
     nt,
     output=False,
     rk=ssp_rk3,
-    delta_l2 = None,
+    delta_l2=None,
     flux="centered",
 ):
-
     dadt = lambda a, t: time_derivative_1D_advection(
         a,
         t,
@@ -283,7 +277,7 @@ def plot_subfig(
         x_j = dx * (0.5 + j)
         xi = (x - x_j) / (0.5 * dx)
         vmap_polyval = vmap(np.polyval, (0, None), -1)
-        poly_eval = vmap_polyval(np.asarray([[1.]]), xi)
+        poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)
         return np.sum(poly_eval * a, axis=-1)
 
     nx = a.shape[0]
@@ -309,7 +303,7 @@ def plot_subfig_oscillations(
         x_j = dx * (0.5 + j)
         xi = (x - x_j) / (0.5 * dx)
         vmap_polyval = vmap(np.polyval, (0, None), -1)
-        poly_eval = vmap_polyval(np.asarray([[1.]]), xi)
+        poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)
         return np.sum(poly_eval * a, axis=-1)
 
     nx = a.shape[0]
@@ -333,7 +327,8 @@ def l2_norm(a):
     """
     a should be (nx, 1)
     """
-    return 1/2 * np.mean(a**2)
+    return 1 / 2 * np.mean(a**2)
+
 
 vmap_l2_norm = vmap(l2_norm)
 
@@ -348,7 +343,7 @@ f_init = lambda x, t: np.sin(2 * np.pi * x)
 f_exact = lambda x, t: np.sin(2 * np.pi * (x - t))
 cfl_safety = 0.5
 
-dx = L/nx
+dx = L / nx
 dt = cfl_safety * dx
 nt = T // dt + 1
 a0 = map_f_to_FV(f_init, t0, nx, dx)
@@ -359,11 +354,23 @@ nx_exact = nx * UPSAMPLE
 dx_exact = L / nx_exact
 
 
-
 #### fluxes
 
-a_centered, t_centered = simulate_1D(a0, t0, nx, dx, dt, nt, flux="centered", output="True", rk = forward_euler)
-a_update, _ = simulate_1D(a0, t0, nx, dx, dt, nt, flux="centered", output="True", rk = forward_euler, delta_l2=0.0)
+a_centered, t_centered = simulate_1D(
+    a0, t0, nx, dx, dt, nt, flux="centered", output="True", rk=forward_euler
+)
+a_update, _ = simulate_1D(
+    a0,
+    t0,
+    nx,
+    dx,
+    dt,
+    nt,
+    flux="centered",
+    output="True",
+    rk=forward_euler,
+    delta_l2=0.0,
+)
 
 num = a_centered.shape[0]
 js = [0, int(num * 0.5), -1]
@@ -381,57 +388,93 @@ for j in js:
     a_exact_list.append(a_exact_j)
 
 
-
-
-
-
-fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8,3))
+fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8, 3))
 
 for j in range(Np):
-    plot_subfig_oscillations(a_exact_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2)
-    plot_subfig_oscillations(a_centered_list[j], axs[j], L, color="#ff5555", label="FTCS\n(unstable)", linewidth=1.5)
-    plot_subfig_oscillations(a_update_list[j], axs[j], L, color="#5555ff", label="Modified FTCS\n(stable)", linewidth=1.5)
+    plot_subfig_oscillations(
+        a_exact_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2
+    )
+    plot_subfig_oscillations(
+        a_centered_list[j],
+        axs[j],
+        L,
+        color="#ff5555",
+        label="FTCS\n(unstable)",
+        linewidth=1.5,
+    )
+    plot_subfig_oscillations(
+        a_update_list[j],
+        axs[j],
+        L,
+        color="#5555ff",
+        label="Modified FTCS\n(stable)",
+        linewidth=1.5,
+    )
 
 
 axs[0].set_xlim([0, 1])
 axs[0].set_ylim([-2.0, 2.0])
 
-axs[0].spines['left'].set_visible(False)
-axs[Np-1].spines['right'].set_visible(False)
+axs[0].spines["left"].set_visible(False)
+axs[Np - 1].spines["right"].set_visible(False)
 for j in range(Np):
     axs[j].set_yticklabels([])
     axs[j].set_xticklabels([])
-    axs[j].spines['top'].set_visible(False)
-    axs[j].spines['bottom'].set_visible(False)
+    axs[j].spines["top"].set_visible(False)
+    axs[j].spines["bottom"].set_visible(False)
     axs[j].tick_params(bottom=False)
     axs[j].tick_params(left=False)
 
-#for j in range(Np):
-#axs[j].set_axis_off()
-#for j in range(Np):
+# for j in range(Np):
+# axs[j].set_axis_off()
+# for j in range(Np):
 #    axs[j].grid(True, which="both")
 
 
+plt.style.use("seaborn")
 
-plt.style.use('seaborn')
-
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-axs[1].text(0.5, 0.15, r'$\frac{\partial u}{\partial t} + \frac{\partial u}{\partial x} = 0$', transform=axs[1].transAxes, fontsize=fs, verticalalignment='top', bbox=props)
+props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+axs[1].text(
+    0.5,
+    0.15,
+    r"$\frac{\partial u}{\partial t} + \frac{\partial u}{\partial x} = 0$",
+    transform=axs[1].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+    bbox=props,
+)
 
 # place a text box in upper left in axes coords
-axs[0].text(0.02, 0.97, "$t=0.0$", transform=axs[0].transAxes, fontsize=fs,
-        verticalalignment='top')
-axs[1].text(0.02, 0.97, "$t=0.5$", transform=axs[1].transAxes, fontsize=fs,
-        verticalalignment='top')
-axs[2].text(0.02, 0.97, "$t=1.0$", transform=axs[2].transAxes, fontsize=fs,
-        verticalalignment='top')
+axs[0].text(
+    0.02,
+    0.97,
+    "$t=0.0$",
+    transform=axs[0].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
+axs[1].text(
+    0.02,
+    0.97,
+    "$t=0.5$",
+    transform=axs[1].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
+axs[2].text(
+    0.02,
+    0.97,
+    "$t=1.0$",
+    transform=axs[2].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(),loc=(0.003,0.002), prop={'size': fs})
+fig.legend(by_label.values(), by_label.keys(), loc=(0.003, 0.002), prop={"size": fs})
 
-#fig.suptitle("")
-
+# fig.suptitle("")
 
 
 fig.tight_layout()
@@ -442,4 +485,3 @@ plt.savefig("advection_demo.eps")
 plt.savefig("advection_demo.png")
 
 plt.show()
-

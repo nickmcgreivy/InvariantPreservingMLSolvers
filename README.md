@@ -5,7 +5,7 @@ Code for JCP 2023 paper on preserving invariants in machine learned PDE solvers.
 
 ## How do I generate figures from section 4 and 5 of the paper?
 
-In these figures, we illustrate the effect of applying these invariant-preserving error-correcting algorithms to traditional numerical methods. To generate and save the figures in section 4 and section 5, download this directory and type `cd traditional_demos`. You will then see 4 directories, `1d_advection`, `1d_burgers`, `2d_euler` and `1d_compressible_euler`. You will need to have jax and sympy installed.
+In these figures, we illustrate the effect of applying these invariant-preserving error-correcting algorithms to traditional numerical methods. To generate and save the figures in section 4 and section 5, download this directory and type `cd traditional_demos`. You will then see 4 directories, `1d_advection`, `1d_burgers`, `2d_euler` and `1d_compressible_euler`. You will need to have jax, sympy, flax, optax, jax_cfd, xarray, seaborn, and h5py installed. You probably need to use python 3.7 or higher.
 
 To generate the figures involving the 1D Burgers' equation, type `cd 1d_burgers` and then `python burgers_4_?.py` for each of the files in the directory. 
 

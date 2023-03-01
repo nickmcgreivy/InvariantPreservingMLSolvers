@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class Flux(Enum):
     """
     Flux is a subclass of Enum, which determines the flux that is used to compute

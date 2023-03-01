@@ -116,7 +116,6 @@ def FE_poly(order):
     return weights * vals
 
 
-
 @lru_cache(maxsize=4)
 def legendre_inner_product(order):
     legendre_basis = legendre_poly(order)

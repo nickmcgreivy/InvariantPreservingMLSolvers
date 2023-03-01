@@ -3,10 +3,16 @@ from helper import integrate_fn_fv
 
 PI = jnp.pi
 
+
 def kolmogorov_forcing_fn_fv(sim_params, forcing_coeff, drag):
     denom = sim_params.dx * sim_params.dy
 
-    ff = lambda x, y: 4 * (2 * PI / sim_params.Ly) * jnp.cos(4 * (2 * PI / sim_params.Ly) * y) * jnp.ones(x.shape)
+    ff = (
+        lambda x, y: 4
+        * (2 * PI / sim_params.Ly)
+        * jnp.cos(4 * (2 * PI / sim_params.Ly) * y)
+        * jnp.ones(x.shape)
+    )
     y_term = integrate_fn_fv(sim_params, ff, n=8) * denom
 
     drag_coeff = denom * drag

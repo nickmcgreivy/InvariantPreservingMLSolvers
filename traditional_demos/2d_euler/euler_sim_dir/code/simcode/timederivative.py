@@ -1,11 +1,18 @@
 import jax.numpy as np
 from flux import Flux
 
+
 def nabla_W(W):
-    return np.roll(W, 1, axis=0) + np.roll(W, -1, axis=0) + np.roll(W, 1, axis=1) + np.roll(W, -1, axis=1) - 4 * W
+    return (
+        np.roll(W, 1, axis=0)
+        + np.roll(W, -1, axis=0)
+        + np.roll(W, 1, axis=1)
+        + np.roll(W, -1, axis=1)
+        - 4 * W
+    )
 
 
-def time_derivative_euler(zeta, t, dx, dy, f_poisson_bracket, f_phi, flux, dldt = None):
+def time_derivative_euler(zeta, t, dx, dy, f_poisson_bracket, f_phi, flux, dldt=None):
     H = f_phi(zeta, t)
 
     F_R, F_T = f_poisson_bracket(zeta, H)
@@ -32,12 +39,14 @@ def time_derivative_euler(zeta, t, dx, dy, f_poisson_bracket, f_phi, flux, dldt 
         F_R = F_R + (dldt_new_x - dldt_old_x) * G_x / denom_x
         F_T = F_T + (dldt_new_y - dldt_old_y) * G_y / denom_y
 
-    pb_term = - (F_R - np.roll(F_R, 1, axis=0)) / (dx) - (F_T - np.roll(F_T, 1, axis=1)) / (dy)
+    pb_term = -(F_R - np.roll(F_R, 1, axis=0)) / (dx) - (
+        F_T - np.roll(F_T, 1, axis=1)
+    ) / (dy)
 
     if flux == Flux.ENERGYCONSERVATION:
-        M = pb_term # mass is already conserved, M = N
+        M = pb_term  # mass is already conserved, M = N
         U = zeta - np.mean(zeta)
-        psi_bar = np.mean(H, axis=-1)[...,None]
+        psi_bar = np.mean(H, axis=-1)[..., None]
         phi_bar = psi_bar - np.mean(psi_bar)
         P = M - np.sum(M * phi_bar) / np.sum(phi_bar**2) * phi_bar
         W = U - np.sum(U * phi_bar) / np.sum(phi_bar**2) * phi_bar
@@ -47,7 +56,5 @@ def time_derivative_euler(zeta, t, dx, dy, f_poisson_bracket, f_phi, flux, dldt 
         if dldt is None:
             dldt = dldt_old
         pb_term = P + (dldt - dldt_old) * G / (np.sum(W * G) * dx * dy)
-        
 
     return pb_term
-    

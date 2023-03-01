@@ -10,6 +10,7 @@ from sympy import legendre, diff, integrate, symbols
 from scipy.special import eval_legendre
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+
 mpl.rcParams.update(mpl.rcParamsDefault)
 
 vmap_polyval = vmap(np.polyval, (0, None), -1)
@@ -59,19 +60,19 @@ def generate_legendre(p):
 
 def upper_B(m, k):
     x = symbols("x")
-    expr = x ** k * (x + 0.5) ** m
+    expr = x**k * (x + 0.5) ** m
     return integrate(expr, (x, -1, 0))
 
 
 def lower_B(m, k):
     x = symbols("x")
-    expr = x ** k * (x - 0.5) ** m
+    expr = x**k * (x - 0.5) ** m
     return integrate(expr, (x, 0, 1))
 
 
 def A(m, k):
     x = symbols("x")
-    expr = legendre(k, x) * x ** m
+    expr = legendre(k, x) * x**m
     return integrate(expr, (x, -1, 1)) / (2 ** (m + 1))
 
 
@@ -301,7 +302,6 @@ def _fixed_quad(f, a, b, n=5):
     return np.sum(wprime[:, None] * f(x_i), axis=0)
 
 
-
 def evalf_1D_right(a):
     """
     Returns the representation of f at the right end of
@@ -373,6 +373,7 @@ def map_f_to_DG(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
         * inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=quad_func, n=n)
     )
 
+
 def inner_prod_with_legendre(f, t, p, nx, dx, leg_poly, quad_func=_fixed_quad, n=5):
     """
     Takes a function f of type lambda x, t: f(x,t) and
@@ -412,7 +413,8 @@ def l2_norm(a):
     a should be (nx, p)
     """
     twokplusone = 2 * np.arange(0, p) + 1
-    return 1/2 * np.mean(np.sum(a**2 / twokplusone, axis=-1))
+    return 1 / 2 * np.mean(np.sum(a**2 / twokplusone, axis=-1))
+
 
 vmap_l2_norm = vmap(l2_norm)
 
@@ -440,7 +442,7 @@ def _centered_flux_DG_1D_burgers(a, p):
     u_left = np.sum(a[:-1], axis=-1)
     u_right = np.sum(alt[None, :] * a[1:], axis=-1)
     return ((u_left + u_right) / 2) ** 2 / 2
-    #return ((u_left**2 + u_right**2) / 4) # THIS ONE IS STABLE ON BURGERS
+    # return ((u_left**2 + u_right**2) / 4) # THIS ONE IS STABLE ON BURGERS
 
 
 def _godunov_flux_DG_1D_burgers(a, p):
@@ -460,7 +462,7 @@ def _godunov_flux_DG_1D_burgers(a, p):
     u_right = np.sum(alt[None, :] * a[1:], axis=-1)
     zero_out = 0.5 * np.abs(np.sign(u_left) + np.sign(u_right))
     compare = np.less(u_left, u_right)
-    F = lambda u: u ** 2 / 2
+    F = lambda u: u**2 / 2
     return compare * zero_out * np.minimum(F(u_left), F(u_right)) + (
         1 - compare
     ) * np.maximum(F(u_left), F(u_right))
@@ -500,10 +502,22 @@ def _volume_integral_DG_1D_burgers(a, t, p):
         volume_sum = np.zeros(a.shape)
         return volume_sum
     elif p == 2:
-        volume_sum = np.zeros(a.shape).at[:, 1].add(1.0 * a[:, 0] * a[:, 0] + 0.3333333333333333 * a[:, 1] * a[:, 1])
+        volume_sum = (
+            np.zeros(a.shape)
+            .at[:, 1]
+            .add(1.0 * a[:, 0] * a[:, 0] + 0.3333333333333333 * a[:, 1] * a[:, 1])
+        )
         return volume_sum
     elif p == 3:
-        volume_sum = np.zeros(a.shape).at[:, 1].add(1.0 * a[:, 0] * a[:, 0] + 0.3333333333333333 * a[:, 1] * a[:, 1] + 0.2 * a[:, 2] * a[:, 2])
+        volume_sum = (
+            np.zeros(a.shape)
+            .at[:, 1]
+            .add(
+                1.0 * a[:, 0] * a[:, 0]
+                + 0.3333333333333333 * a[:, 1] * a[:, 1]
+                + 0.2 * a[:, 2] * a[:, 2]
+            )
+        )
         volume_sum = volume_sum.at[:, 2].add(
             1.0 * a[:, 0] * a[:, 1]
             + 1.0 * a[:, 1] * a[:, 0]
@@ -512,11 +526,16 @@ def _volume_integral_DG_1D_burgers(a, t, p):
         )
         return volume_sum
     elif p == 4:
-        volume_sum = np.zeros(a.shape).at[:, 1].add(1.0 * a[:, 0] * a[:, 0]
-            + 0.3333333333333333 * a[:, 1] * a[:, 1]
-            + 0.2 * a[:, 2] * a[:, 2]
-            + 0.14285714285714285 * a[:, 3] * a[:, 3],
-        )   
+        volume_sum = (
+            np.zeros(a.shape)
+            .at[:, 1]
+            .add(
+                1.0 * a[:, 0] * a[:, 0]
+                + 0.3333333333333333 * a[:, 1] * a[:, 1]
+                + 0.2 * a[:, 2] * a[:, 2]
+                + 0.14285714285714285 * a[:, 3] * a[:, 3],
+            )
+        )
         volume_sum = volume_sum.at[:, 2].add(
             1.0 * a[:, 0] * a[:, 1]
             + 1.0 * a[:, 1] * a[:, 0]
@@ -544,7 +563,7 @@ def _diffusion_flux_term_DG_1D_burgers(a, t, p, dx):
     negonetok = (np.ones(p) * -1) ** np.arange(p)
     slope_right = recovery_slope(a, p) / dx
     slope_left = np.roll(slope_right, 1)
-    return (slope_right[:, None] - negonetok[None, :] * slope_left[:, None])
+    return slope_right[:, None] - negonetok[None, :] * slope_left[:, None]
 
 
 def _diffusion_volume_integral_DG_1D_burgers(a, t, p, dx):
@@ -566,7 +585,16 @@ def _diffusion_volume_integral_DG_1D_burgers(a, t, p, dx):
 
 
 def time_derivative_DG_1D_burgers(
-    a, t, p, flux, nx, dx, leg_poly, forcing_func=None, nu=0.0, dl_dt=None,
+    a,
+    t,
+    p,
+    flux,
+    nx,
+    dx,
+    leg_poly,
+    forcing_func=None,
+    nu=0.0,
+    dl_dt=None,
 ):
     """
     Compute da_j^m/dt given the matrix a_j^m which represents the solution,
@@ -598,21 +626,23 @@ def time_derivative_DG_1D_burgers(
         dl_dt_diffusion = np.sum(a * (dif_flux_term + dif_volume_integral))
         nu = nu + (dl_dt - dl_dt_old) / dl_dt_diffusion
 
-
-
     if forcing_func is not None:
-        forcing_term = inner_prod_with_legendre(forcing_func, t, p, nx, dx, leg_poly, n = 2 * p - 1)
+        forcing_term = inner_prod_with_legendre(
+            forcing_func, t, p, nx, dx, leg_poly, n=2 * p - 1
+        )
     else:
         forcing_term = 0.0
     return (twokplusone[None, :] / dx) * (
-        flux_term + volume_integral + nu * (dif_flux_term + dif_volume_integral) + forcing_term
+        flux_term
+        + volume_integral
+        + nu * (dif_flux_term + dif_volume_integral)
+        + forcing_term
     )
 
 
 #######################
 # SIMULATE
 #######################
-
 
 
 def _scan(sol, x, rk_F):
@@ -625,8 +655,6 @@ def _scan_output(sol, x, rk_F):
     a, t = sol
     a_f, t_f = rk_F(a, t, x)
     return (a_f, t_f), (a, t)
-
-
 
 
 def simulate_1D(
@@ -643,9 +671,8 @@ def simulate_1D(
     forcing_func=None,
     nu=0.0,
     rk=ssp_rk3,
-    dl_dt = None,
+    dl_dt=None,
 ):
-
     dadt = lambda a, t, dl_dt: time_derivative_DG_1D_burgers(
         a,
         t,
@@ -656,11 +683,10 @@ def simulate_1D(
         leg_poly,
         forcing_func=forcing_func,
         nu=nu,
-        dl_dt = dl_dt,
+        dl_dt=dl_dt,
     )
 
     rk_F = lambda a, t, dl_dt: rk(a, t, dadt, dt, dl_dt=dl_dt)
-
 
     if output:
         scanf = jit(lambda sol, x: _scan_output(sol, x, rk_F))
@@ -704,11 +730,9 @@ def plot_subfig(
     return
 
 
-
 #################
 # INIT
 #################
-
 
 
 #####
@@ -725,7 +749,7 @@ t0 = 0.0
 Np = 4
 f_init = lambda x, t: np.sin(2 * np.pi * x)
 cfl_safety = 0.2
-dx = L/nx
+dx = L / nx
 dt = cfl_safety * dx / (2 * p - 1)
 nt = T // dt + 1
 leg_poly = generate_legendre(p)
@@ -738,7 +762,18 @@ a0_exact = map_f_to_DG(f_init, t0, p, nx_exact, dx_exact, leg_poly, n=8)
 dt_exact = cfl_safety * dx_exact / (2 * p - 1)
 nt_exact = nt * UPSAMPLE + 1
 
-a_data, t_data = simulate_1D(a0_exact, t0, p, "godunov", nx_exact, dx_exact, dt_exact, nt_exact, leg_poly, output=True)
+a_data, t_data = simulate_1D(
+    a0_exact,
+    t0,
+    p,
+    "godunov",
+    nx_exact,
+    dx_exact,
+    dt_exact,
+    nt_exact,
+    leg_poly,
+    output=True,
+)
 dl_dt_exact = (vmap_l2_norm(a_data[1:]) - vmap_l2_norm(a_data[:-1])) / dt_exact
 
 dl_dt_upsample = np.mean(dl_dt_exact.reshape(-1, UPSAMPLE), axis=-1)
@@ -746,11 +781,25 @@ a_godunov = a_data[:-1][::UPSAMPLE]
 t_godunov = t_data[:-1][::UPSAMPLE]
 
 
-
-
-a_centered, _ = simulate_1D(a0, t0, p, "centered", nx, dx, dt, nt, leg_poly, output="True")
-a_stabilized, _ = simulate_1D(a0, t0, p, "centered", nx, dx, dt, nt, leg_poly, output="True", dl_dt = np.zeros(dl_dt_upsample.shape))
-a_stabilized2, _ = simulate_1D(a0, t0, p, "centered", nx, dx, dt, nt, leg_poly, output="True", dl_dt = dl_dt_upsample)
+a_centered, _ = simulate_1D(
+    a0, t0, p, "centered", nx, dx, dt, nt, leg_poly, output="True"
+)
+a_stabilized, _ = simulate_1D(
+    a0,
+    t0,
+    p,
+    "centered",
+    nx,
+    dx,
+    dt,
+    nt,
+    leg_poly,
+    output="True",
+    dl_dt=np.zeros(dl_dt_upsample.shape),
+)
+a_stabilized2, _ = simulate_1D(
+    a0, t0, p, "centered", nx, dx, dt, nt, leg_poly, output="True", dl_dt=dl_dt_upsample
+)
 
 
 num = a_godunov.shape[0]
@@ -778,62 +827,120 @@ for i in range(len(a_godunov_list)):
     print("Stabilized2 {}: {}".format(i, l2_norm(a_stabilized2_list[i])))
 """
 
-fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8,3))
+fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8, 3))
 
 for j in range(Np):
-    plot_subfig(a_godunov_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2)
-    plot_subfig(a_centered_list[j], axs[j], L, color="#ff5555", label="Centered flux\n(unstable)", linewidth=1.5)
-    plot_subfig(a_stabilized_list[j], axs[j], L, color="#003366", label='$\ell_2$-norm conserving\ncentered flux', linewidth=1.5)
-    plot_subfig(a_stabilized2_list[j], axs[j], L, color="#007733", label='$\ell_2$-norm decaying\ncentered flux', linewidth=1.5)
-    axs[j].plot(np.zeros(len(a_stabilized)), '--',  color="black", linewidth=0.4)
+    plot_subfig(
+        a_godunov_list[j],
+        axs[j],
+        L,
+        color="grey",
+        label="Exact\nsolution",
+        linewidth=1.2,
+    )
+    plot_subfig(
+        a_centered_list[j],
+        axs[j],
+        L,
+        color="#ff5555",
+        label="Centered flux\n(unstable)",
+        linewidth=1.5,
+    )
+    plot_subfig(
+        a_stabilized_list[j],
+        axs[j],
+        L,
+        color="#003366",
+        label="$\ell_2$-norm conserving\ncentered flux",
+        linewidth=1.5,
+    )
+    plot_subfig(
+        a_stabilized2_list[j],
+        axs[j],
+        L,
+        color="#007733",
+        label="$\ell_2$-norm decaying\ncentered flux",
+        linewidth=1.5,
+    )
+    axs[j].plot(np.zeros(len(a_stabilized)), "--", color="black", linewidth=0.4)
 
 axs[0].set_xlim([0, 1])
 axs[0].set_ylim([-2.0, 2.0])
 
-axs[0].spines['left'].set_visible(False)
-axs[Np-1].spines['right'].set_visible(False)
+axs[0].spines["left"].set_visible(False)
+axs[Np - 1].spines["right"].set_visible(False)
 for j in range(Np):
     axs[j].set_yticklabels([])
     axs[j].set_xticklabels([])
-    axs[j].spines['top'].set_visible(False)
-    axs[j].spines['bottom'].set_visible(False)
+    axs[j].spines["top"].set_visible(False)
+    axs[j].spines["bottom"].set_visible(False)
     axs[j].tick_params(bottom=False)
     axs[j].tick_params(left=False)
 
-#for j in range(Np):
-#axs[j].set_axis_off()
-#for j in range(Np):
+# for j in range(Np):
+# axs[j].set_axis_off()
+# for j in range(Np):
 #    axs[j].grid(True, which="both")
 
 
-plt.style.use('seaborn')
+plt.style.use("seaborn")
 
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-axs[1].text(0.15, 0.15, r'$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} (\frac{u^2}{2}) = 0$', transform=axs[1].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+axs[1].text(
+    0.15,
+    0.15,
+    r"$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} (\frac{u^2}{2}) = 0$",
+    transform=axs[1].transAxes,
+    fontsize=14,
+    verticalalignment="top",
+    bbox=props,
+)
 
-# place a text box in upper left in axes coords 
-axs[0].text(0.02, 0.95, "$t={:.1f}$".format(t_godunov[js[0]]), transform=axs[0].transAxes, fontsize=13,
-        verticalalignment='top')
-axs[1].text(0.02, 0.95, "$t={:.1f}$".format(t_godunov[js[1]]), transform=axs[1].transAxes, fontsize=13,
-        verticalalignment='top')
-axs[2].text(0.02, 0.95, "$t={:.1f}$".format(t_godunov[js[2]]), transform=axs[2].transAxes, fontsize=13,
-        verticalalignment='top')
-axs[3].text(0.02, 0.95, "$t={:.1f}$".format(t_godunov[js[3]]), transform=axs[3].transAxes, fontsize=13,
-        verticalalignment='top')
+# place a text box in upper left in axes coords
+axs[0].text(
+    0.02,
+    0.95,
+    "$t={:.1f}$".format(t_godunov[js[0]]),
+    transform=axs[0].transAxes,
+    fontsize=13,
+    verticalalignment="top",
+)
+axs[1].text(
+    0.02,
+    0.95,
+    "$t={:.1f}$".format(t_godunov[js[1]]),
+    transform=axs[1].transAxes,
+    fontsize=13,
+    verticalalignment="top",
+)
+axs[2].text(
+    0.02,
+    0.95,
+    "$t={:.1f}$".format(t_godunov[js[2]]),
+    transform=axs[2].transAxes,
+    fontsize=13,
+    verticalalignment="top",
+)
+axs[3].text(
+    0.02,
+    0.95,
+    "$t={:.1f}$".format(t_godunov[js[3]]),
+    transform=axs[3].transAxes,
+    fontsize=13,
+    verticalalignment="top",
+)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(),loc=(0.003,0.002), prop={'size': 10})
+fig.legend(by_label.values(), by_label.keys(), loc=(0.003, 0.002), prop={"size": 10})
 
-#fig.suptitle("")
+# fig.suptitle("")
 
 fig.tight_layout()
 fig.subplots_adjust(wspace=0, hspace=0)
 
 
-plt.savefig("burgers_dg_order{}_demo.eps".format(p-1))
-plt.savefig("burgers_dg_order{}_demo.png".format(p-1))
+plt.savefig("burgers_dg_order{}_demo.eps".format(p - 1))
+plt.savefig("burgers_dg_order{}_demo.png".format(p - 1))
 
 plt.show()
-
-

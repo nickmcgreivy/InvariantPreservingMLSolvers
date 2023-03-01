@@ -3,11 +3,13 @@ from jax import vmap, jit
 from jax.lax import scan
 import matplotlib.pyplot as plt
 from jax.config import config
+
 config.update("jax_enable_x64", True)
 
 vmap_polyval = vmap(np.polyval, (0, None), -1)
 
 import matplotlib as mpl
+
 mpl.rcParams.update(mpl.rcParamsDefault)
 
 
@@ -160,10 +162,7 @@ def _fixed_quad(f, a, b, n=5):
 
 
 def inner_prod_with_legendre(f, t, nx, dx, quad_func=_fixed_quad, n=5):
-    
-    _vmap_fixed_quad = vmap(
-        lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0
-    ) 
+    _vmap_fixed_quad = vmap(lambda f, a, b: quad_func(f, a, b, n=n), (None, 0, 0), 0)
     j = np.arange(nx)
     a = dx * j
     b = dx * (j + 1)
@@ -173,26 +172,20 @@ def inner_prod_with_legendre(f, t, nx, dx, quad_func=_fixed_quad, n=5):
         x_j = dx * (0.5 + j)
         return (x - x_j) / (0.5 * dx)
 
-    to_int_func = lambda x: f(x, t)[:, None] * vmap_polyval(np.asarray([[1.]]), xi(x))
+    to_int_func = lambda x: f(x, t)[:, None] * vmap_polyval(np.asarray([[1.0]]), xi(x))
 
     return _vmap_fixed_quad(to_int_func, a, b)
 
 
-
-
-
 def map_f_to_FV(f, t, nx, dx, quad_func=_fixed_quad, n=5):
-    return (
-        inner_prod_with_legendre(f, t, nx, dx, quad_func=quad_func, n=n) / dx
-    )
-
+    return inner_prod_with_legendre(f, t, nx, dx, quad_func=quad_func, n=n) / dx
 
 
 def evalf_1D(x, a, dx, leg_poly):
     j = np.floor(x / dx).astype(int)
     x_j = dx * (0.5 + j)
     xi = (x - x_j) / (0.5 * dx)
-    poly_eval = vmap_polyval(np.asarray([[1.]]), xi)  # nx, p array
+    poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)  # nx, p array
     return np.sum(poly_eval * a[j, :], axis=-1)
 
 
@@ -213,17 +206,19 @@ def _centered_flux_1D_burgers(a):
     u_left = np.sum(a[:-1], axis=-1)
     u_right = np.sum(a[1:], axis=-1)
     return ((u_left + u_right) / 2) ** 2 / 2
-    #return ((u_left**2 + u_right**2) / 2)
+    # return ((u_left**2 + u_right**2) / 2)
+
 
 def _stabilized_flux_1D_burgers(a):
     f0 = _centered_flux_1D_burgers(a)
-    diff = (np.roll(a[:,0], -1) - a[:,0])
+    diff = np.roll(a[:, 0], -1) - a[:, 0]
     S = np.sum(f0 * diff)
     return f0 - S * diff / np.sum(diff**2)
 
+
 def _stabilized2_flux_1D_burgers(a, dl_dt):
     f0 = _centered_flux_1D_burgers(a)
-    diff = (np.roll(a[:,0], -1) - a[:,0])
+    diff = np.roll(a[:, 0], -1) - a[:, 0]
     dl_dt_old = np.sum(f0 * diff)
     return f0 + (dl_dt - dl_dt_old) * diff / np.sum(diff**2)
 
@@ -234,15 +229,19 @@ def _godunov_flux_1D_burgers(a):
     u_right = np.sum(a[1:], axis=-1)
     zero_out = 0.5 * np.abs(np.sign(u_left) + np.sign(u_right))
     compare = np.less(u_left, u_right)
-    F = lambda u: u ** 2 / 2
+    F = lambda u: u**2 / 2
     return compare * zero_out * np.minimum(F(u_left), F(u_right)) + (
         1 - compare
     ) * np.maximum(F(u_left), F(u_right))
 
 
-
 def time_derivative_1D_burgers(
-    a, t, nx, dx, flux, dl_dt = None,
+    a,
+    t,
+    nx,
+    dx,
+    flux,
+    dl_dt=None,
 ):
     if flux == "centered":
         flux_right = _centered_flux_1D_burgers(a)
@@ -257,17 +256,21 @@ def time_derivative_1D_burgers(
 
     flux_left = np.roll(flux_right, 1, axis=0)
     return (flux_left[:, None] - flux_right[:, None]) / dx
-    
 
 
 def time_derivative_1D_burgers_non_conservative(
-    a, t, nx, dx, dl_dt = None, conservative = False,
+    a,
+    t,
+    nx,
+    dx,
+    dl_dt=None,
+    conservative=False,
 ):
     greater_than_zero = np.less(0.0, a)
     a_backwards = (a - np.roll(a, 1, axis=0)) / dx
 
     a_forwards = (np.roll(a, -1, axis=0) - a) / dx
-    N = - a * (greater_than_zero * a_backwards + (1 - greater_than_zero) * a_forwards)
+    N = -a * (greater_than_zero * a_backwards + (1 - greater_than_zero) * a_forwards)
     if conservative is True:
         U = a - np.mean(a)
         M = N - np.mean(N)
@@ -278,7 +281,7 @@ def time_derivative_1D_burgers_non_conservative(
             dl_dt = dl_dt_old
         N = M + (dl_dt - dl_dt_old) * G / denom
     return N
-    
+
 
 def simulate_1D_nonconservative(
     a0,
@@ -289,17 +292,16 @@ def simulate_1D_nonconservative(
     nt,
     output=False,
     rk=ssp_rk3,
-    dl_dt = None,
-    conservative = False,
+    dl_dt=None,
+    conservative=False,
 ):
-
     dadt = lambda a, t, dl_dt: time_derivative_1D_burgers_non_conservative(
         a,
         t,
         nx,
         dx,
-        dl_dt = dl_dt,
-        conservative = conservative,
+        dl_dt=dl_dt,
+        conservative=conservative,
     )
 
     rk_F = lambda a, t, dl_dt: rk(a, t, dadt, dt, dl_dt=dl_dt)
@@ -313,6 +315,7 @@ def simulate_1D_nonconservative(
         (a_f, t_f), _ = scan(scanf, (a0, t0), dl_dt, length=nt)
         return (a_f, t_f)
 
+
 def simulate_1D(
     a0,
     t0,
@@ -323,16 +326,15 @@ def simulate_1D(
     output=False,
     rk=ssp_rk3,
     flux="centered",
-    dl_dt = None,
+    dl_dt=None,
 ):
-
     dadt = lambda a, t, dl_dt: time_derivative_1D_burgers(
         a,
         t,
         nx,
         dx,
         flux,
-        dl_dt = dl_dt,
+        dl_dt=dl_dt,
     )
 
     rk_F = lambda a, t, dl_dt: rk(a, t, dadt, dt, dl_dt=dl_dt)
@@ -354,7 +356,7 @@ def plot_subfig(
         x_j = dx * (0.5 + j)
         xi = (x - x_j) / (0.5 * dx)
         vmap_polyval = vmap(np.polyval, (0, None), -1)
-        poly_eval = vmap_polyval(np.asarray([[1.]]), xi)
+        poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)
         return np.sum(poly_eval * a, axis=-1)
 
     nx = a.shape[0]
@@ -380,7 +382,7 @@ def plot_subfig_oscillations(
         x_j = dx * (0.5 + j)
         xi = (x - x_j) / (0.5 * dx)
         vmap_polyval = vmap(np.polyval, (0, None), -1)
-        poly_eval = vmap_polyval(np.asarray([[1.]]), xi)
+        poly_eval = vmap_polyval(np.asarray([[1.0]]), xi)
         return np.sum(poly_eval * a, axis=-1)
 
     nx = a.shape[0]
@@ -404,7 +406,8 @@ def l2_norm(a):
     """
     a should be (nx, 1)
     """
-    return 1/2 * np.mean(a**2)
+    return 1 / 2 * np.mean(a**2)
+
 
 vmap_l2_norm = vmap(l2_norm)
 
@@ -418,7 +421,7 @@ t0 = 0.0
 f_init = lambda x, t: 0.5 + np.sin(2 * np.pi * x)
 cfl_safety = 0.2
 
-dx = L/nx
+dx = L / nx
 dt = cfl_safety * dx
 nt = T // dt + 1
 a0 = map_f_to_FV(f_init, t0, nx, dx)
@@ -428,7 +431,7 @@ a0 = map_f_to_FV(f_init, t0, nx, dx)
 ##########
 
 
-##### exact 
+##### exact
 
 UPSAMPLE = 25
 nx_exact = nx * UPSAMPLE
@@ -437,7 +440,9 @@ dt_exact = cfl_safety * dx_exact
 a0_exact = map_f_to_FV(f_init, t0, nx_exact, dx_exact)
 nt_exact = T // dt_exact + 2
 
-a_data, t_data = simulate_1D(a0_exact, t0, nx_exact, dx_exact, dt_exact, nt_exact, output=True, flux="godunov")
+a_data, t_data = simulate_1D(
+    a0_exact, t0, nx_exact, dx_exact, dt_exact, nt_exact, output=True, flux="godunov"
+)
 dl_dt_exact = (vmap_l2_norm(a_data[1:]) - vmap_l2_norm(a_data[:-1])) / dt_exact
 
 dl_dt_upsample = np.mean(dl_dt_exact.reshape(-1, UPSAMPLE), axis=-1)
@@ -447,9 +452,15 @@ t_godunov = t_data[:-1][::UPSAMPLE]
 
 #### fluxes
 
-a_finite_difference, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, output="True", conservative = False)
-a_stabilized, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, output="True", conservative = True, dl_dt = None) #np.zeros(dl_dt_upsample.shape))
-a_stabilized2, _ = simulate_1D_nonconservative(a0, t0, nx, dx, dt, nt, output="True", conservative = True, dl_dt = dl_dt_upsample)
+a_finite_difference, _ = simulate_1D_nonconservative(
+    a0, t0, nx, dx, dt, nt, output="True", conservative=False
+)
+a_stabilized, _ = simulate_1D_nonconservative(
+    a0, t0, nx, dx, dt, nt, output="True", conservative=True, dl_dt=None
+)  # np.zeros(dl_dt_upsample.shape))
+a_stabilized2, _ = simulate_1D_nonconservative(
+    a0, t0, nx, dx, dt, nt, output="True", conservative=True, dl_dt=dl_dt_upsample
+)
 
 """
 print(a_godunov.shape)
@@ -467,7 +478,7 @@ print("L2 norm of a_stabilized_dldt is {}".format(0.5 * np.sum(a_stabilized2**2,
 """
 
 num = a_finite_difference.shape[0]
-js = [0, int(0.33 * num), int(0.66 * num), num-1]
+js = [0, int(0.33 * num), int(0.66 * num), num - 1]
 
 a_fd_list = []
 a_stabilized_list = []
@@ -482,57 +493,121 @@ for j in js:
     a_stabilized2_list.append(a_stabilized2[j])
 
 
-
-
-fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8,3))
+fig, axs = plt.subplots(1, Np, sharex=True, sharey=True, squeeze=True, figsize=(8, 3))
 
 for j in range(Np):
-    plot_subfig_oscillations(a_godunov_list[j], axs[j], L, color="grey", label="Exact\nsolution", linewidth=1.2)
-    plot_subfig_oscillations(a_fd_list[j], axs[j], L, color="#ff5555", label="Non-conservative\nfinite-difference", linewidth=1.5)
-    plot_subfig_oscillations(a_stabilized_list[j], axs[j], L, color="#003366", label=r'$\frac{d\ell_2^{new}}{dt} = \frac{d\ell_2^{old}}{dt}$', linewidth=1.5)
-    plot_subfig_oscillations(a_stabilized2_list[j], axs[j], L, color="#007733", label=r'$\frac{d\ell_2^{new}}{dt} = \frac{d\ell_2^{exact}}{dt}$', linewidth=1.5)
-    axs[j].plot(np.zeros(len(a_stabilized)), '--',  color="black", linewidth=0.4)
+    plot_subfig_oscillations(
+        a_godunov_list[j],
+        axs[j],
+        L,
+        color="grey",
+        label="Exact\nsolution",
+        linewidth=1.2,
+    )
+    plot_subfig_oscillations(
+        a_fd_list[j],
+        axs[j],
+        L,
+        color="#ff5555",
+        label="Non-conservative\nfinite-difference",
+        linewidth=1.5,
+    )
+    plot_subfig_oscillations(
+        a_stabilized_list[j],
+        axs[j],
+        L,
+        color="#003366",
+        label=r"$\frac{d\ell_2^{new}}{dt} = \frac{d\ell_2^{old}}{dt}$",
+        linewidth=1.5,
+    )
+    plot_subfig_oscillations(
+        a_stabilized2_list[j],
+        axs[j],
+        L,
+        color="#007733",
+        label=r"$\frac{d\ell_2^{new}}{dt} = \frac{d\ell_2^{exact}}{dt}$",
+        linewidth=1.5,
+    )
+    axs[j].plot(np.zeros(len(a_stabilized)), "--", color="black", linewidth=0.4)
 
 axs[0].set_xlim([0, 1])
 axs[0].set_ylim([-1.5, 2.0])
 
-axs[0].spines['left'].set_visible(False)
-axs[Np-1].spines['right'].set_visible(False)
+axs[0].spines["left"].set_visible(False)
+axs[Np - 1].spines["right"].set_visible(False)
 for j in range(Np):
     axs[j].set_yticklabels([])
     axs[j].set_xticklabels([])
-    axs[j].spines['top'].set_visible(False)
-    axs[j].spines['bottom'].set_visible(False)
+    axs[j].spines["top"].set_visible(False)
+    axs[j].spines["bottom"].set_visible(False)
     axs[j].tick_params(bottom=False)
     axs[j].tick_params(left=False)
 
-#for j in range(Np):
-#axs[j].set_axis_off()
-#for j in range(Np):
+# for j in range(Np):
+# axs[j].set_axis_off()
+# for j in range(Np):
 #    axs[j].grid(True, which="both")
 
 
-plt.style.use('seaborn')
+plt.style.use("seaborn")
 
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-#axs[0].text(0.4, 0.95, r'$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} \big(\frac{u^2}{2}\big) = 0$', transform=axs[0].transAxes, fontsize=10, verticalalignment='top', bbox=props)
-axs[2].text(0.15, 0.15, r'$\frac{\partial u}{\partial t} + u\frac{\partial u}{\partial x} = 0$', transform=axs[2].transAxes, fontsize=14, verticalalignment='top', bbox=props)
+props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+# axs[0].text(0.4, 0.95, r'$\frac{\partial u}{\partial t} + \frac{\partial}{\partial x} \big(\frac{u^2}{2}\big) = 0$', transform=axs[0].transAxes, fontsize=10, verticalalignment='top', bbox=props)
+axs[2].text(
+    0.15,
+    0.15,
+    r"$\frac{\partial u}{\partial t} + u\frac{\partial u}{\partial x} = 0$",
+    transform=axs[2].transAxes,
+    fontsize=14,
+    verticalalignment="top",
+    bbox=props,
+)
 
 # place a text box in upper left in axes coords
-axs[0].text(0.02, 0.95, "$t=0.0$", transform=axs[0].transAxes, fontsize=fs,
-        verticalalignment='top')
-axs[1].text(0.02, 0.95, "$t=0.167$", transform=axs[1].transAxes, fontsize=fs,
-        verticalalignment='top')
-axs[2].text(0.02, 0.95, "$t=0.333$", transform=axs[2].transAxes, fontsize=fs,
-        verticalalignment='top')
-axs[3].text(0.02, 0.95, "$t=0.5$", transform=axs[3].transAxes, fontsize=fs,
-        verticalalignment='top')
+axs[0].text(
+    0.02,
+    0.95,
+    "$t=0.0$",
+    transform=axs[0].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
+axs[1].text(
+    0.02,
+    0.95,
+    "$t=0.167$",
+    transform=axs[1].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
+axs[2].text(
+    0.02,
+    0.95,
+    "$t=0.333$",
+    transform=axs[2].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
+axs[3].text(
+    0.02,
+    0.95,
+    "$t=0.5$",
+    transform=axs[3].transAxes,
+    fontsize=fs,
+    verticalalignment="top",
+)
 
 handles, labels = plt.gca().get_legend_handles_labels()
 by_label = dict(zip(labels, handles))
-fig.legend(by_label.values(), by_label.keys(),loc=(0.00,0.00), prop={'size': 0.95 * fs}, ncol=2)
+fig.legend(
+    by_label.values(),
+    by_label.keys(),
+    loc=(0.00, 0.00),
+    prop={"size": 0.95 * fs},
+    ncol=2,
+)
 
-#fig.suptitle("")
+# fig.suptitle("")
 
 fig.tight_layout()
 fig.subplots_adjust(wspace=0, hspace=0)
@@ -542,4 +617,3 @@ plt.savefig("burgers_nonconservative_demo.eps")
 plt.savefig("burgers_nonconservative_demo.png")
 
 plt.show()
-

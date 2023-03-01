@@ -10,7 +10,6 @@ def output_flux(zeta, alpha_R, alpha_T, model, params):
 
 
 class LearnedFlux2D(nn.Module):
-
     ml_params: ModelParams
 
     def setup(self):
@@ -21,13 +20,13 @@ class LearnedFlux2D(nn.Module):
 
     def __call__(self, zeta, alpha_R, alpha_T):
         output = self.network(zeta, alpha_R, alpha_T)
-        flux_R = output[...,0]
-        flux_T = output[...,1]
+        flux_R = output[..., 0]
+        flux_T = output[..., 1]
 
         return flux_R, flux_T
 
-class CNNNetwork(nn.Module):
 
+class CNNNetwork(nn.Module):
     ml_params: ModelParams
 
     def setup(self):
@@ -35,9 +34,9 @@ class CNNNetwork(nn.Module):
         kernel_init = nn.initializers.lecun_normal(dtype=dtype)
         zeros_init = nn.initializers.zeros
 
-        widths = [self.ml_params.width for _ in range(self.ml_params.depth-1)]
+        widths = [self.ml_params.width for _ in range(self.ml_params.depth - 1)]
 
-        kernel_inits = [kernel_init for _ in range(self.ml_params.depth-1)]
+        kernel_inits = [kernel_init for _ in range(self.ml_params.depth - 1)]
 
         self.layers = [
             nn.Conv(
@@ -50,22 +49,24 @@ class CNNNetwork(nn.Module):
             for width in widths
         ]
         self.final_layer = nn.Conv(
-            features = 2,
+            features=2,
             kernel_size=(self.ml_params.kernel_size, self.ml_params.kernel_size),
             padding="VALID",
-            kernel_init = zeros_init,
-            bias_init = zeros_init,
+            kernel_init=zeros_init,
+            bias_init=zeros_init,
         )
 
-        self.pad_width = sum([(self.ml_params.kernel_size-1)//2 for _ in range(self.ml_params.depth)])
-
+        self.pad_width = sum(
+            [(self.ml_params.kernel_size - 1) // 2 for _ in range(self.ml_params.depth)]
+        )
 
     def pad(self, x, width):
-        return jnp.pad(x, ((width, width), (width, width), (0,0)), "wrap")
-
+        return jnp.pad(x, ((width, width), (width, width), (0, 0)), "wrap")
 
     def __call__(self, zeta, alpha_R, alpha_T):
-        x = jnp.concatenate((zeta[...,None], alpha_R[..., None], alpha_T[..., None]), axis=-1)
+        x = jnp.concatenate(
+            (zeta[..., None], alpha_R[..., None], alpha_T[..., None]), axis=-1
+        )
 
         x = self.pad(x, self.pad_width)
 

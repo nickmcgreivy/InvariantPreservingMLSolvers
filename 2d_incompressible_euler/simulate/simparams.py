@@ -4,6 +4,7 @@ import jax.numpy as jnp
 from rungekutta import FUNCTION_MAP
 from flux import Flux
 
+
 @dataclass
 class SimulationParams:
     name: str
@@ -18,8 +19,21 @@ class SimulationParams:
 
 
 class FiniteVolumeSimulationParams(SimulationParams):
-
-    def __init__(self, name, basedir, readwritedir, nx, ny, Lx, Ly, cfl_safety, rk, flux, global_stabilization=False, energy_conserving=False):
+    def __init__(
+        self,
+        name,
+        basedir,
+        readwritedir,
+        nx,
+        ny,
+        Lx,
+        Ly,
+        cfl_safety,
+        rk,
+        flux,
+        global_stabilization=False,
+        energy_conserving=False,
+    ):
         super().__init__(name, nx, ny, Lx, Ly, Lx / nx, Ly / ny, cfl_safety, rk)
         self.basedir = basedir
         self.readwritedir = readwritedir
