@@ -1,5 +1,5 @@
 # Invariant Preservation in Machine Learned PDE Solvers
-Code for JCP 2023 paper on preserving invariants in machine learned PDE solvers.
+Code for 2023 paper [Invariant preservation in machine learned PDE solvers via error correction](https://arxiv.org/abs/2303.16110).
 
 
 
